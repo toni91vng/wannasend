@@ -8,6 +8,8 @@ import { AppState, Platform } from 'react-native';
 // Valores públicos por diseño: la clave publicable solo permite lo que dejan las políticas RLS.
 export const SUPABASE_URL = 'https://ublutvpumxtdiuvqbbfa.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_VCUezw1llA6EzD4__96Kmg_ylWumdX5';
+// Clave publicable de Stripe (modo prueba). Es pública por diseño; la secreta vive solo en el servidor.
+export const STRIPE_PUBLISHABLE_KEY = 'pk_test_PENDIENTE';
 
 /**
  * Sesión cifrada en el móvil: la clave AES vive en el almacén seguro del sistema (Keychain/Keystore)

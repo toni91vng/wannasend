@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NoticeHost } from '@/components/NoticeHost';
+import { PaymentsProvider } from '@/components/PaymentsProvider';
 import { AppProviders } from '@/data/session';
 import { colors } from '@/lib/theme';
 
@@ -15,9 +16,11 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AppProviders>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
-        <NoticeHost />
+        <PaymentsProvider>
+          <StatusBar style="dark" />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
+          <NoticeHost />
+        </PaymentsProvider>
       </AppProviders>
     </SafeAreaProvider>
   );

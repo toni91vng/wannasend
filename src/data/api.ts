@@ -54,6 +54,7 @@ type ShipmentRow = {
   id: string; trip_id: string; sender_id: string; size: DbSize; weight_kg: number; content: string; description: string;
   recipient_name: string; status: ShipmentStatus; requested_at: string; picked_up_at: string | null; delivered_at: string | null;
   carrier_amount_cents: number; total_cents: number;
+  paid_at?: string | null; refunded_at?: string | null; transferred_at?: string | null;
   trip?: TripRow | null; sender?: { name: string } | null; contact?: { recipient_phone: string } | null;
 };
 
@@ -75,11 +76,14 @@ function toShipment(r: ShipmentRow): Shipment {
     deliveredAt: hhmm(r.delivered_at),
     carrierAmount: euros(r.carrier_amount_cents),
     total: euros(r.total_cents),
+    paid: !!r.paid_at,
+    refunded: !!r.refunded_at,
+    transferred: !!r.transferred_at,
     trip: r.trip ? toTrip(r.trip) : undefined,
   };
 }
 
-const SHIPMENT_COLS = 'id, trip_id, sender_id, size, weight_kg, content, description, recipient_name, status, requested_at, picked_up_at, delivered_at, carrier_amount_cents, total_cents';
+const SHIPMENT_COLS = 'id, trip_id, sender_id, size, weight_kg, content, description, recipient_name, status, requested_at, picked_up_at, delivered_at, carrier_amount_cents, total_cents, paid_at, refunded_at, transferred_at';
 
 function check<T>(res: { data: T; error: unknown }): T {
   if (res.error) throw res.error;
@@ -320,4 +324,13 @@ export async function report(r: { reportedUserId?: string; shipmentId?: string; 
     reporter_id: user!.id, reported_user_id: r.reportedUserId ?? null, shipment_id: r.shipmentId ?? null,
     reason: r.reason, details: r.details ?? '',
   }));
+}
+
+/* ------------------------------------------------------------------ */
+/* Configuración                                                       */
+/* ------------------------------------------------------------------ */
+
+export async function paymentsEnabled(): Promise<boolean> {
+  const r = check(await supabase.from('app_config').select('payments_enabled').maybeSingle()) as { payments_enabled: boolean } | null;
+  return !!r?.payments_enabled;
 }

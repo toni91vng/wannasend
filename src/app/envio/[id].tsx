@@ -12,6 +12,7 @@ import { Shipment } from '@/data/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { longDate, STATUS, timeAgo } from '@/lib/format';
 import { notify, shareText } from '@/lib/notify';
+import { payShipment } from '@/lib/payments';
 import { euros } from '@/lib/pricing';
 import { run } from '@/lib/run';
 import { errorText } from '@/lib/supabase';
@@ -61,16 +62,26 @@ export default function Envio() {
     setBusy(false);
   };
 
+  const refundText = !sh.paid ? '' : sh.refunded ? `Te hemos devuelto ${euros(sh.total)}.` : `Estamos devolviéndote ${euros(sh.total)}; puede tardar unos días en aparecer en tu tarjeta.`;
+  const completePayment = async () => {
+    setBusy(true);
+    try {
+      const r = await payShipment(sh.id);
+      if (r === 'paid') setTimeout(() => qc.invalidateQueries({ queryKey: ['shipment', id] }), 2000);
+    } catch (e) { notify('No se ha podido pagar', errorText(e)); }
+    setBusy(false);
+  };
+
   const head = (() => {
     switch (sh.status) {
-      case 'pendiente_pago': return { icon: 'card-outline' as const, tone: 'amber' as const, title: 'Pago pendiente', text: 'Completa el pago para enviar la solicitud.' };
+      case 'pendiente_pago': return { icon: 'card-outline' as const, tone: 'amber' as const, title: 'Pago pendiente', text: `Completa el pago para enviar la solicitud a ${name}. Si no, se cancelará en 30 minutos.` };
       case 'solicitado': return { icon: 'time-outline' as const, tone: 'amber' as const, title: `Esperando respuesta de ${name}`, text: `Te avisaremos en cuanto responda. Si no responde en 12 h, la solicitud caduca. Enviada ${timeAgo(sh.requestedAt)}.` };
       case 'aceptado': return { icon: 'checkmark' as const, tone: 'green' as const, title: '¡Envío aceptado!', text: `¡Enhorabuena! ${name} ha aceptado llevar tu paquete. Comparte el código con ${sh.recipientName}.` };
       case 'en_camino': return { icon: 'car-outline' as const, tone: 'green' as const, title: 'Tu paquete está en camino', text: `${t.arrival} hora prevista de llegada a destino.` };
       case 'entregado': return { icon: 'gift-outline' as const, tone: 'green' as const, title: '¡Envío entregado!', text: `${sh.recipientName} ha recibido tu paquete${sh.deliveredAt ? ` a las ${sh.deliveredAt}` : ''}.` };
-      case 'rechazado': return { icon: 'close' as const, tone: 'amber' as const, title: 'Solicitud rechazada', text: `${name} no puede llevar tu paquete esta vez. Busca otro trayecto.` };
-      case 'caducado': return { icon: 'hourglass-outline' as const, tone: 'amber' as const, title: 'Solicitud caducada', text: `${name} no respondió a tiempo. Busca otro trayecto.` };
-      default: return { icon: 'close' as const, tone: 'amber' as const, title: 'Envío cancelado', text: 'Has cancelado este envío.' };
+      case 'rechazado': return { icon: 'close' as const, tone: 'amber' as const, title: 'Solicitud rechazada', text: `${name} no puede llevar tu paquete esta vez. ${refundText}` };
+      case 'caducado': return { icon: 'hourglass-outline' as const, tone: 'amber' as const, title: 'Solicitud caducada', text: `${name} no respondió a tiempo. ${refundText}` };
+      default: return { icon: 'close' as const, tone: 'amber' as const, title: 'Envío cancelado', text: `Este envío se ha cancelado. ${refundText}` };
     }
   })();
   const idx = stepIndex(sh);
@@ -118,7 +129,7 @@ export default function Envio() {
         <Divider />
         <KeyValue k="Paquete" v={`${sh.size} · ${String(sh.weightKg).replace('.', ',')} kg`} />
         <KeyValue k="Destinatario" v={sh.recipientName} />
-        <KeyValue k="Precio" v={euros(sh.total)} accent />
+        <KeyValue k={sh.refunded ? 'Reembolsado' : sh.paid ? 'Pagado' : 'Precio'} v={euros(sh.total)} accent />
       </Card>
 
       {active ? (
@@ -156,7 +167,12 @@ export default function Envio() {
         </>
       ) : null}
       {['rechazado', 'caducado', 'cancelado'].includes(sh.status) ? <Button label="Buscar otro trayecto" onPress={() => { router.dismissAll(); router.navigate('/buscar'); }} /> : null}
-      {sh.status === 'pendiente_pago' ? <Button label="Volver" onPress={() => notify('Pagos', 'Los pagos se activan en la siguiente versión.')} /> : null}
+      {sh.status === 'pendiente_pago' ? (
+        <>
+          <Button label={`Completar pago (${euros(sh.total)})`} icon="card-outline" loading={busy} onPress={completePayment} />
+          <Button variant="ghost" label="Cancelar" color={colors.danger} onPress={cancel} />
+        </>
+      ) : null}
     </Screen>
   );
 }

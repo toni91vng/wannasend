@@ -57,3 +57,5 @@ export function useAction<A extends unknown[], R>(fn: (...args: A) => Promise<R>
     onSuccess: () => invalidate.forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
   });
 }
+
+export const usePaymentsEnabled = () => useQuery({ queryKey: ['paymentsEnabled'], queryFn: api.paymentsEnabled, staleTime: 5 * 60_000 });

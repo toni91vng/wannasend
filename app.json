@@ -32,7 +32,15 @@
         }
       ],
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.wannasend",
+          "enableGooglePay": true
+        }
+      ],
+      "expo-web-browser"
     ],
     "scheme": "wannasend",
     "experiments": {

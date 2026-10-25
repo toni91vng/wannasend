@@ -96,6 +96,9 @@ export interface Shipment {
   deliveredAt?: string; // HH:MM
   carrierAmount: number;
   total: number;
+  paid: boolean;
+  refunded: boolean;
+  transferred: boolean;
   trip?: Trip;
 }
 
