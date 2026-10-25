@@ -1,51 +1,55 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Text, View } from 'react-native';
 import { TripCard } from '@/components/TripCard';
-import { Button, Chips, EmptyState, H2, Muted, Screen } from '@/components/ui';
-import { ME, useDerived, useStore } from '@/data/store';
-import { CityName } from '@/data/types';
+import { Button, Chips, EmptyState, ErrorBox, H2, Loading, Muted, Screen } from '@/components/ui';
+import { useNearbyDays, useSearch } from '@/data/hooks';
+import { Place } from '@/data/types';
 import { longDate, shortDate } from '@/lib/format';
+import { errorText } from '@/lib/supabase';
 import { colors, fonts } from '@/lib/theme';
 
 export default function Resultados() {
-  const { from, to, date } = useLocalSearchParams<{ from: CityName; to: CityName; date: string }>();
-  const { trips } = useStore();
-  const { user, booked } = useDerived();
-
-  const sameRoute = trips.filter((t) => t.from === from && t.to === to && t.carrierId !== ME && booked(t.id) < t.capacity);
-  const list = sameRoute.filter((t) => t.date === date).sort((a, b) => a.departure.localeCompare(b.departure));
-  const today = new Date().toISOString().slice(0, 10);
-  const nearby = [...new Set(sameRoute.filter((t) => t.date !== date && t.date >= today).map((t) => t.date))].sort().slice(0, 4);
+  const params = useLocalSearchParams<{ from: string; to: string; date: string }>();
+  const from: Place = JSON.parse(params.from);
+  const to: Place = JSON.parse(params.to);
+  const date = params.date;
+  const { data: list, isLoading, error, refetch } = useSearch(from, to, date);
+  const { data: nearby = [] } = useNearbyDays(from, to, !!list && list.length === 0);
+  const otherDays = nearby.filter((d) => d.day !== date);
+  const alertParams = { from: params.from, to: params.to, date };
 
   return (
     <Screen title="Buscar carrier"
-      footer={list.length ? <>
+      footer={list?.length ? <>
         <Button label="Hacer otra búsqueda" onPress={() => router.back()} />
-        <Button variant="ghost" label="Crear alerta" onPress={() => router.push({ pathname: '/alerta', params: { from, to, date } })} />
+        <Button variant="ghost" label="Crear alerta" onPress={() => router.push({ pathname: '/alerta', params: alertParams })} />
       </> : undefined}
     >
       <View style={{ alignItems: 'center', gap: 2 }}>
-        <Muted>{list.length ? 'Trayectos disponibles de la búsqueda' : 'Resultado de la búsqueda'}</Muted>
-        <H2 style={{ color: colors.primaryDark, textAlign: 'center' }}>{from} - {to}</H2>
+        <Muted>{list?.length ? 'Trayectos disponibles' : 'Resultado de la búsqueda'}</Muted>
+        <H2 style={{ color: colors.primaryDark, textAlign: 'center' }}>{from.city || from.label} - {to.city || to.label}</H2>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 18, color: colors.primaryDark }}>{longDate(date)}</Text>
       </View>
 
-      {list.map((t) => (
-        <TripCard key={t.id} trip={t} carrier={user(t.carrierId)} onPress={() => router.push(`/trayecto/${t.id}`)} />
+      {isLoading ? <Loading label="Buscando trayectos…" /> : null}
+      {error ? <ErrorBox text={errorText(error)} onRetry={() => refetch()} /> : null}
+
+      {list?.map((t) => (
+        <TripCard key={t.id} trip={t} onPress={() => router.push(`/trayecto/${t.id}`)} />
       ))}
 
-      {!list.length ? (
+      {list && !list.length ? (
         <>
-          <EmptyState icon="search" title="Aún no hay trayectos para esta fecha" text="Crea una alerta y te avisaremos en cuanto un carrier publique un trayecto que encaje con tu paquete.">
-            <Button label="Crear alerta" icon="notifications-outline" onPress={() => router.push({ pathname: '/alerta', params: { from, to, date } })} />
+          <EmptyState icon="search" title="Aún no hay trayectos para esta fecha" text="Crea una alerta y te avisaremos en cuanto un carrier publique un trayecto que pase cerca.">
+            <Button label="Crear alerta" icon="notifications-outline" onPress={() => router.push({ pathname: '/alerta', params: alertParams })} />
             <Button variant="ghost" label="Probar otras fechas" onPress={() => router.back()} />
           </EmptyState>
-          {nearby.length ? (
+          {otherDays.length ? (
             <View style={{ gap: 8 }}>
               <Muted>Fechas cercanas con trayectos</Muted>
-              <Chips options={nearby.map(shortDate)} value={undefined} onChange={(label) => {
-                const d = nearby[nearby.map(shortDate).indexOf(label)];
-                router.setParams({ date: d });
+              <Chips options={otherDays.map((d) => `${shortDate(d.day)} · ${d.trips}`)} value={undefined} onChange={(label) => {
+                const d = otherDays[otherDays.map((x) => `${shortDate(x.day)} · ${x.trips}`).indexOf(label)];
+                router.setParams({ date: d.day });
               }} />
             </View>
           ) : null}

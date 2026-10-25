@@ -1,17 +1,17 @@
-import { ShipmentStatus, Trip } from '@/data/types';
+import { ShipmentStatus } from '@/data/types';
 
 export function longDate(iso: string): string {
-  const d = new Date(iso + 'T12:00:00');
+  const d = new Date(iso.length === 10 ? iso + 'T12:00:00' : iso);
   const s = d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function shortDate(iso: string): string {
-  const d = new Date(iso + 'T12:00:00');
+  const d = new Date(iso.length === 10 ? iso + 'T12:00:00' : iso);
   return d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-export function duration(t: Pick<Trip, 'departure' | 'arrival'>): string {
+export function duration(t: { departure: string; arrival: string }): string {
   const [h1, m1] = t.departure.split(':').map(Number);
   const [h2, m2] = t.arrival.split(':').map(Number);
   let mins = h2 * 60 + m2 - (h1 * 60 + m1);
@@ -35,14 +35,15 @@ export function clock(ts: number): string {
 }
 
 export const STATUS: Record<ShipmentStatus, { label: string; tone: 'green' | 'amber' | 'gray' | 'red' }> = {
+  pendiente_pago: { label: 'Pago pendiente', tone: 'amber' },
   solicitado: { label: 'Pendiente', tone: 'amber' },
   aceptado: { label: 'Aceptado', tone: 'green' },
-  recogido: { label: 'Recogido', tone: 'green' },
   en_camino: { label: 'En camino', tone: 'green' },
   entregado: { label: 'Entregado', tone: 'gray' },
   rechazado: { label: 'Rechazado', tone: 'red' },
   cancelado: { label: 'Cancelado', tone: 'red' },
+  caducado: { label: 'Caducado', tone: 'red' },
 };
 
-/** ¿Es un trayecto futuro (o de hoy)? */
-export const isUpcoming = (iso: string) => iso >= new Date().toISOString().slice(0, 10);
+/** ¿Es una fecha futura (o de hoy)? */
+export const isUpcoming = (iso: string) => new Date(iso).getTime() > Date.now() - 6 * 3600_000;

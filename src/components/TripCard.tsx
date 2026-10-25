@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { Trip, User } from '@/data/types';
 import { duration, shortDate } from '@/lib/format';
-import { breakdown, euros } from '@/lib/pricing';
+import { euros } from '@/lib/pricing';
 import { colors, fonts } from '@/lib/theme';
 import { Avatar, Badge, Body, Card, H3, Rating, Row, Small } from './ui';
 
@@ -35,7 +35,7 @@ export function TripCard({ trip, carrier, onPress, status, priceMode = 'sender',
   trip: Trip; carrier?: User; onPress?: () => void; status?: { label: string; tone: 'green' | 'amber' | 'gray' | 'red' };
   priceMode?: 'sender' | 'carrier'; showDate?: boolean;
 }) {
-  const price = priceMode === 'sender' ? breakdown(trip.pricePerPackage).total : trip.pricePerPackage;
+  const price = priceMode === 'sender' ? trip.total : trip.pricePerPackage;
   return (
     <Card onPress={onPress}>
       {showDate ? <Small style={{ fontFamily: fonts.semibold, color: colors.primaryDark, textTransform: 'capitalize' }}>{shortDate(trip.date)}</Small> : null}
@@ -46,11 +46,11 @@ export function TripCard({ trip, carrier, onPress, status, priceMode = 'sender',
           {status ? <Badge label={status.label} tone={status.tone} /> : null}
         </View>
       </Row>
-      {carrier ? (
+      {carrier || trip.carrierName ? (
         <Row>
-          <Avatar name={carrier.name} size={32} />
-          <H3 style={{ fontSize: 14 }}>{carrier.name}</H3>
-          <Rating value={carrier.rating} />
+          <Avatar name={carrier?.name ?? trip.carrierName!} size={32} />
+          <H3 style={{ fontSize: 14 }}>{carrier?.name ?? trip.carrierName}</H3>
+          {trip.carrierRating !== undefined || carrier ? <Rating value={carrier?.rating ?? trip.carrierRating ?? 0} /> : null}
           <View style={{ flex: 1 }} />
           <Small>Hasta {trip.maxSize.toLowerCase()} · {trip.maxWeightKg} kg</Small>
         </Row>

@@ -3,7 +3,8 @@ import { Redirect } from 'expo-router';
 import { Tabs, type BottomTabBarProps } from 'expo-router/js-tabs';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useStore } from '@/data/store';
+import { useConversations } from '@/data/hooks';
+import { useSession } from '@/data/session';
 import { colors, fonts } from '@/lib/theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -18,7 +19,7 @@ const TABS: Record<string, { label: string; icon?: IconName; brand?: boolean }> 
 /** Barra verde del Figma. Pestaña activa en blanco con fondo más oscuro (más contraste que el gris original). */
 function GreenTabBar({ state, navigateToTab }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const { conversations } = useStore();
+  const { data: conversations = [] } = useConversations();
   const unread = conversations.reduce((a, c) => a + c.unread, 0);
   return (
     <View style={{ flexDirection: 'row', backgroundColor: colors.primary, paddingBottom: insets.bottom + 6, paddingTop: 6, paddingHorizontal: 6 }}>
@@ -55,8 +56,8 @@ function GreenTabBar({ state, navigateToTab }: BottomTabBarProps) {
 }
 
 export default function TabsLayout() {
-  const { authed } = useStore();
-  if (!authed) return <Redirect href="/bienvenida" />;
+  const { userId, loading } = useSession();
+  if (!loading && !userId) return <Redirect href="/bienvenida" />;
   return (
     <Tabs tabBar={(p) => <GreenTabBar {...p} />} screenOptions={{ headerShown: false }}>
       <Tabs.Screen name="buscar" />

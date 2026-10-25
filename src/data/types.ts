@@ -1,16 +1,3 @@
-export const CITIES = {
-  Lleida: { lat: 41.6176, lng: 0.62 },
-  Barcelona: { lat: 41.3874, lng: 2.1686 },
-  Tarragona: { lat: 41.1189, lng: 1.2445 },
-  Girona: { lat: 41.9794, lng: 2.8214 },
-  Zaragoza: { lat: 41.6488, lng: -0.8891 },
-  Valencia: { lat: 39.4699, lng: -0.3763 },
-  Madrid: { lat: 40.4168, lng: -3.7038 },
-} as const;
-
-export type CityName = keyof typeof CITIES;
-export const CITY_NAMES = Object.keys(CITIES) as CityName[];
-
 export type PackageSize = 'Sobre' | 'Pequeño' | 'Mediano' | 'Grande';
 export const SIZES: PackageSize[] = ['Sobre', 'Pequeño', 'Mediano', 'Grande'];
 export const SIZE_HINT: Record<PackageSize, string> = {
@@ -19,9 +6,21 @@ export const SIZE_HINT: Record<PackageSize, string> = {
   Mediano: 'Hasta 50×40×30 cm',
   Grande: 'Hasta 80×60×40 cm',
 };
+export type DbSize = 'sobre' | 'pequeno' | 'mediano' | 'grande';
+export const toDbSize = (s: PackageSize): DbSize => (s === 'Pequeño' ? 'pequeno' : (s.toLowerCase() as DbSize));
+export const fromDbSize = (s: DbSize): PackageSize => (s === 'pequeno' ? 'Pequeño' : ((s[0].toUpperCase() + s.slice(1)) as PackageSize));
+
 export const CONTENT_TYPES = ['Ropa', 'Documentos', 'Libros', 'Electrónica', 'Regalo', 'Otros'];
 
 export type Level = 'Nuevo' | 'Habitual' | 'Experto';
+
+/** Lugar elegido en el buscador de direcciones. */
+export interface Place {
+  label: string;
+  city: string;
+  lat: number;
+  lng: number;
+}
 
 export interface User {
   id: string;
@@ -31,82 +30,98 @@ export interface User {
   reviews: number;
   trips: number;
   packages: number;
+  carried: number;
   verified: boolean;
   level: Level;
 }
 
 export interface Review {
   id: string;
-  authorId: string;
-  aboutId: string;
+  authorName: string;
   role: 'Carrier' | 'Sender';
   stars: number;
   text: string;
   date: string;
 }
 
+export type TripStatus = 'publicado' | 'cancelado' | 'finalizado';
+
 export interface Trip {
   id: string;
   carrierId: string;
-  from: CityName;
-  to: CityName;
-  fromPoint: string;
+  from: string; // ciudad
+  to: string;
+  fromPoint: string; // dirección
   toPoint: string;
-  date: string; // ISO yyyy-mm-dd
+  departureAt: string; // ISO
+  date: string; // yyyy-mm-dd en hora local
   departure: string; // HH:MM
   arrival: string; // HH:MM
   capacity: number;
+  booked: number;
   maxSize: PackageSize;
   maxWeightKg: number;
-  pricePerPackage: number; // aportación al carrier
+  pricePerPackage: number; // aportación al carrier (€)
+  total: number; // lo que paga el sender (€)
+  status: TripStatus;
+  carrierName?: string;
+  carrierRating?: number;
+  carrierReviews?: number;
 }
 
 export type ShipmentStatus =
-  | 'solicitado' // pago retenido, esperando al carrier
+  | 'pendiente_pago'
+  | 'solicitado'
   | 'aceptado'
-  | 'recogido'
   | 'en_camino'
   | 'entregado'
   | 'rechazado'
-  | 'cancelado';
+  | 'cancelado'
+  | 'caducado';
 
 export interface Shipment {
   id: string;
   tripId: string;
   senderId: string;
+  senderName?: string;
   size: PackageSize;
   weightKg: number;
   content: string;
   description: string;
   recipientName: string;
-  recipientPhone: string;
-  deliveryCode: string; // 4 dígitos que recibe el destinatario
+  recipientPhone?: string; // solo visible para el carrier tras aceptar
   status: ShipmentStatus;
   requestedAt: number;
-  pickedUpAt?: string;
-  deliveredAt?: string;
-  rated?: boolean;
+  pickedUpAt?: string; // HH:MM
+  deliveredAt?: string; // HH:MM
+  carrierAmount: number;
+  total: number;
+  trip?: Trip;
+}
+
+export interface ConversationSummary {
+  id: string;
+  otherId: string;
+  otherName: string;
+  tripLabel: string | null;
+  lastBody: string | null;
+  lastAt: number;
+  lastMine: boolean;
+  unread: number;
 }
 
 export interface Message {
-  id: string;
-  fromId: string;
-  text: string;
+  id: number;
+  senderId: string;
+  body: string;
   at: number;
-}
-
-export interface Conversation {
-  id: string;
-  userId: string; // la otra persona
-  tripId?: string;
-  messages: Message[];
-  unread: number;
+  readAt: string | null;
 }
 
 export interface Alert {
   id: string;
-  from: CityName;
-  to: CityName;
+  fromLabel: string;
+  toLabel: string;
   dates: string[];
   push: boolean;
   email: boolean;
@@ -114,7 +129,8 @@ export interface Alert {
 
 export interface Movement {
   id: string;
-  title: string;
-  subtitle: string;
+  kind: 'ganancia' | 'retirada';
+  description: string;
   amount: number;
+  at: string;
 }

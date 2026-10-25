@@ -1,19 +1,19 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Share } from 'react-native';
-import { BigIcon, Button, Muted, Screen } from '@/components/ui';
-import { useDerived } from '@/data/store';
+import { BigIcon, Button, Loading, Muted, Screen } from '@/components/ui';
+import { useTrip } from '@/data/hooks';
 import { longDate } from '@/lib/format';
+import { shareText } from '@/lib/notify';
 
 export default function Publicado() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { trip } = useDerived();
-  const t = trip(id)!;
+  const { data: t } = useTrip(id);
+  if (!t) return <Screen title="¡Publicado!" back={false}><Loading /></Screen>;
   return (
     <Screen title="¡Publicado!" back={false}
       footer={<>
         <Button label="Ver mi trayecto" onPress={() => router.replace(`/mi-trayecto/${t.id}`)} />
         <Button variant="secondary" label="Compartir trayecto" icon="share-social-outline"
-          onPress={() => Share.share({ message: `Voy de ${t.from} a ${t.to} el ${longDate(t.date)}. ¿Necesitas enviar algo? Búscame en WannaSend.` })} />
+          onPress={() => shareText(`Voy de ${t.from} a ${t.to} el ${longDate(t.date)}. ¿Necesitas enviar algo? Búscame en WannaSend.`)} />
       </>}
     >
       <BigIcon name="checkmark" size={120} />

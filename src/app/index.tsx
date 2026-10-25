@@ -3,16 +3,17 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { Logo } from '@/components/Logo';
-import { useStore } from '@/data/store';
+import { useSession } from '@/data/session';
 import { colors, fonts } from '@/lib/theme';
 
 /** Portada: splash verde con el logo, como en el Figma. */
 export default function Portada() {
-  const { authed } = useStore();
+  const { userId, loading } = useSession();
   useEffect(() => {
-    const t = setTimeout(() => router.replace(authed ? '/buscar' : '/bienvenida'), 1400);
+    if (loading) return;
+    const t = setTimeout(() => router.replace(userId ? '/buscar' : '/bienvenida'), 900);
     return () => clearTimeout(t);
-  }, [authed]);
+  }, [userId, loading]);
   return (
     <View style={{ flex: 1, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
       <StatusBar style="light" />

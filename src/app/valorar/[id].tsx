@@ -1,20 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable } from 'react-native';
-import { Avatar, BigIcon, Button, Field, H2, Muted, Row, Screen } from '@/components/ui';
-import { useDerived, useStore } from '@/data/store';
+import { Avatar, BigIcon, Button, Field, H2, Loading, Muted, Row, Screen } from '@/components/ui';
+import { submitReview } from '@/data/api';
+import { useProfile, useShipment } from '@/data/hooks';
+import { run } from '@/lib/run';
 import { colors } from '@/lib/theme';
 
 export default function Valorar() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { shipments, rate } = useStore();
-  const { trip, user } = useDerived();
-  const sh = shipments.find((s) => s.id === id)!;
-  const c = user(trip(sh.tripId)!.carrierId);
+  const qc = useQueryClient();
+  const { data: sh } = useShipment(id);
+  const { data: c } = useProfile(sh?.trip?.carrierId);
   const [stars, setStars] = useState(0);
   const [text, setText] = useState('');
   const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   if (done) {
     return (
@@ -25,11 +28,23 @@ export default function Valorar() {
       </Screen>
     );
   }
+  if (!c) return <Screen title="Valorar"><Loading /></Screen>;
+
+  const send = async () => {
+    setBusy(true);
+    const ok = await run(() => submitReview(id, stars, text.trim()));
+    setBusy(false);
+    if (ok !== undefined) {
+      qc.invalidateQueries({ queryKey: ['reviewed'] });
+      qc.invalidateQueries({ queryKey: ['profile', c.id] });
+      setDone(true);
+    }
+  };
 
   return (
     <Screen title="Valorar"
       footer={<>
-        <Button label="Enviar valoración" disabled={!stars} onPress={() => { rate(sh.id, c.id, stars, text.trim()); setDone(true); }} />
+        <Button label="Enviar valoración" loading={busy} disabled={!stars} onPress={send} />
         <Button variant="ghost" label="Valorar más tarde" onPress={() => router.back()} />
       </>}
     >
@@ -42,7 +57,7 @@ export default function Valorar() {
           </Pressable>
         ))}
       </Row>
-      <Field label={`Deja una opinión a ${c.name}`} multiline value={text} onChangeText={setText} placeholder="¿Qué tal la comunicación, la puntualidad…?" textAlignVertical="top" />
+      <Field label={`Deja una opinión a ${c.name}`} multiline value={text} onChangeText={setText} maxLength={500} placeholder="¿Qué tal la comunicación, la puntualidad…?" textAlignVertical="top" />
     </Screen>
   );
 }

@@ -1,16 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { View } from 'react-native';
-import { useStore } from '@/data/store';
+import { useReviews } from '@/data/hooks';
 import { User } from '@/data/types';
 import { colors, fonts } from '@/lib/theme';
-import { Avatar, Body, Card, Divider, EmptyState, H1, Muted, Rating, Row, Segmented, Small } from './ui';
+import { Avatar, Body, Card, Divider, EmptyState, H1, Loading, Muted, Rating, Row, Segmented, Small } from './ui';
 
 /** Cabecera + pestañas Información / Valoraciones, compartido entre "Mi perfil" y el perfil de otros. */
 export function ProfileView({ u, isMe, children }: { u: User; isMe?: boolean; children?: React.ReactNode }) {
-  const { reviews, users } = useStore();
   const [tab, setTab] = useState<'Información' | 'Valoraciones'>('Información');
-  const mine = reviews.filter((r) => r.aboutId === u.id);
+  const { data: reviews } = useReviews(tab === 'Valoraciones' ? u.id : undefined);
 
   return (
     <>
@@ -28,25 +27,22 @@ export function ProfileView({ u, isMe, children }: { u: User; isMe?: boolean; ch
         <Card>
           {u.bio ? <Body style={{ color: colors.textSecondary }}>{u.bio}</Body> : <Muted>{isMe ? 'Añade una breve presentación para generar confianza.' : 'Sin presentación todavía.'}</Muted>}
           <Divider />
-          <Row><Ionicons name={u.verified ? 'shield-checkmark' : 'shield-outline'} size={18} color={u.verified ? colors.primary : colors.muted} /><Body>{u.verified ? 'Usuario verificado' : 'Sin verificar'}</Body></Row>
+          <Row><Ionicons name={u.verified ? 'shield-checkmark' : 'shield-outline'} size={18} color={u.verified ? colors.primary : colors.muted} /><Body>{u.verified ? 'Identidad verificada' : 'Identidad sin verificar'}</Body></Row>
           <Row><Ionicons name="car-outline" size={18} color={colors.primaryDark} /><Body>{u.trips} desplazamientos realizados</Body></Row>
-          <Row><Ionicons name="cube-outline" size={18} color={colors.primaryDark} /><Body>{u.packages} paquetes enviados</Body></Row>
+          <Row><Ionicons name="cube-outline" size={18} color={colors.primaryDark} /><Body>{u.packages} paquetes enviados · {u.carried} llevados</Body></Row>
           {children ? <><Divider />{children}</> : null}
         </Card>
-      ) : mine.length ? (
-        mine.map((r) => {
-          const a = users[r.authorId];
-          return (
-            <Card key={r.id} style={{ gap: 8 }}>
-              <Row>
-                <Avatar name={a.name} size={36} />
-                <View style={{ flex: 1 }}><Body style={{ fontFamily: fonts.semibold }}>{a.name}</Body><Small>Como {r.role.toLowerCase()} · {r.date}</Small></View>
-                <Rating value={r.stars} />
-              </Row>
-              <Body style={{ color: colors.textSecondary }}>{r.text}</Body>
-            </Card>
-          );
-        })
+      ) : !reviews ? <Loading /> : reviews.length ? (
+        reviews.map((r) => (
+          <Card key={r.id} style={{ gap: 8 }}>
+            <Row>
+              <Avatar name={r.authorName} size={36} />
+              <View style={{ flex: 1 }}><Body style={{ fontFamily: fonts.semibold }}>{r.authorName}</Body><Small>Como {r.role.toLowerCase()} · {r.date}</Small></View>
+              <Rating value={r.stars} />
+            </Row>
+            {r.text ? <Body style={{ color: colors.textSecondary }}>{r.text}</Body> : null}
+          </Card>
+        ))
       ) : (
         <EmptyState icon="star-outline" title="Aún no hay valoraciones" text={isMe ? 'Haz tu primer envío o lleva un paquete como carrier para recibir valoraciones.' : `${u.name} todavía no tiene valoraciones.`} />
       )}

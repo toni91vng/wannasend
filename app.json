@@ -21,11 +21,18 @@
       "package": "com.wannasend.app"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "output": "single"
     },
     "plugins": [
-      "expo-router",
-      "expo-font"
+      [
+        "expo-router",
+        {
+          "asyncRoutes": false
+        }
+      ],
+      "expo-font",
+      "expo-secure-store"
     ],
     "scheme": "wannasend",
     "experiments": {

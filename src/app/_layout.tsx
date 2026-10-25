@@ -5,7 +5,8 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StoreProvider } from '@/data/store';
+import { NoticeHost } from '@/components/NoticeHost';
+import { AppProviders } from '@/data/session';
 import { colors } from '@/lib/theme';
 
 export default function RootLayout() {
@@ -13,10 +14,11 @@ export default function RootLayout() {
   if (!loaded) return <View style={{ flex: 1, backgroundColor: colors.primary }} />;
   return (
     <SafeAreaProvider>
-      <StoreProvider>
+      <AppProviders>
         <StatusBar style="dark" />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
-      </StoreProvider>
+        <NoticeHost />
+      </AppProviders>
     </SafeAreaProvider>
   );
 }

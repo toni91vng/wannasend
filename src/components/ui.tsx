@@ -323,3 +323,22 @@ export const st = StyleSheet.create({
   check: { width: 22, height: 22, borderRadius: 4, borderWidth: 1.5, borderColor: colors.muted, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   day: { width: 62, paddingVertical: 8, borderRadius: radius.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', gap: 2 },
 });
+
+/* ---------- Estados de carga ---------- */
+export function Loading({ label = 'Cargando…' }: { label?: string }) {
+  return (
+    <View style={{ paddingVertical: 40, alignItems: 'center', gap: 10 }}>
+      <ActivityIndicator color={colors.primary} />
+      <Small>{label}</Small>
+    </View>
+  );
+}
+
+export function ErrorBox({ text, onRetry }: { text: string; onRetry?: () => void }) {
+  return (
+    <View style={{ padding: 14, borderRadius: radius.sm, backgroundColor: '#FBE9E8', gap: 8 }}>
+      <Text style={{ fontFamily: fonts.medium, fontSize: 14, color: colors.danger }}>{text}</Text>
+      {onRetry ? <Button small variant="danger" label="Reintentar" onPress={onRetry} /> : null}
+    </View>
+  );
+}
