@@ -10,7 +10,7 @@ export type DbSize = 'sobre' | 'pequeno' | 'mediano' | 'grande';
 export const toDbSize = (s: PackageSize): DbSize => (s === 'Pequeño' ? 'pequeno' : (s.toLowerCase() as DbSize));
 export const fromDbSize = (s: DbSize): PackageSize => (s === 'pequeno' ? 'Pequeño' : ((s[0].toUpperCase() + s.slice(1)) as PackageSize));
 
-export const CONTENT_TYPES = ['Ropa', 'Documentos', 'Libros', 'Electrónica', 'Regalo', 'Otros'];
+export const CONTENT_TYPES = ['Ropa', 'Documentos', 'Libros', 'Electrónica', 'Regalo', 'Comida', 'Objetos personales', 'Otros'];
 
 export type Level = 'Nuevo' | 'Habitual' | 'Experto';
 
@@ -67,12 +67,20 @@ export interface Trip {
   carrierName?: string;
   carrierRating?: number;
   carrierReviews?: number;
+  carrierVerified?: boolean;
+  distanceKm?: number;
+  distanceSource?: 'carretera' | 'estimada';
+  earningsCap?: number | null; // tope de gastos compartidos (€); null = sin tope
+  capRemaining?: number | null; // lo que queda del tope (€)
+  startedAt?: string | null; // "Empiezo el trayecto"
+  requireVerifiedSender?: boolean;
 }
 
 export type ShipmentStatus =
   | 'pendiente_pago'
   | 'solicitado'
   | 'aceptado'
+  | 'recogido'
   | 'en_camino'
   | 'entregado'
   | 'rechazado'
@@ -84,6 +92,7 @@ export interface Shipment {
   tripId: string;
   senderId: string;
   senderName?: string;
+  senderVerified?: boolean;
   size: PackageSize;
   weightKg: number;
   content: string;
@@ -99,7 +108,28 @@ export interface Shipment {
   paid: boolean;
   refunded: boolean;
   transferred: boolean;
+  declaredValue: number; // €
+  photoPath?: string;
+  pickupPhotoPath?: string | null;
+  rejectionStage?: 'solicitud' | 'recogida' | null;
+  rejectionReason?: string | null;
   trip?: Trip;
+}
+
+export interface AppConfig {
+  paymentsEnabled: boolean;
+  capPerKm: number; // €/km
+  maxDeclaredValue: number; // €
+  identityValueThreshold: number; // €
+  prohibitedListVersion: string;
+  carrierVerificationRequired: boolean;
+  senderVerificationEnabled: boolean;
+}
+
+export interface Verification {
+  identityStatus: 'sin_verificar' | 'pendiente' | 'verificado' | 'fallido';
+  payoutsReady: boolean;
+  verified: boolean;
 }
 
 export interface ConversationSummary {

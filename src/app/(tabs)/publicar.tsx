@@ -5,9 +5,10 @@ import { Text, View } from 'react-native';
 import { AddressField } from '@/components/AddressField';
 import {
   Badge, Button, Card, Checkbox, Chips, DatePicker, Divider, Field, H3, InfoBox, KeyValue, Label, Muted, Row, Screen,
-  Small, Stepper, Steps,
+  Small, Stepper, Steps, ToggleRow,
 } from '@/components/ui';
-import { publishTrip } from '@/data/api';
+import { publishTrip, routeDistance } from '@/data/api';
+import { useAppConfig, useMyVerification } from '@/data/hooks';
 import { PackageSize, Place, SIZES } from '@/data/types';
 import { longDate } from '@/lib/format';
 import { breakdown, distanceKm, euros, rangeCents, suggestedCents } from '@/lib/pricing';
@@ -17,9 +18,15 @@ import { colors, fonts } from '@/lib/theme';
 const isTime = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 const at = (date: string, time: string) => new Date(`${date}T${time}:00`);
 
-/** Publicar trayecto (carrier) en 4 pasos. El servidor vuelve a validar distancia y precio. */
+/**
+ * Publicar trayecto (carrier) en 4 pasos. El servidor vuelve a validar distancia, precio y tope.
+ * Tope de gastos compartidos: €/km × km por carretera. Limita lo que el carrier cobra sumando todos sus paquetes,
+ * así que las plazas se calculan a partir del precio: tope ÷ precio por paquete.
+ */
 export default function Publicar() {
   const qc = useQueryClient();
+  const { data: cfg } = useAppConfig();
+  const { data: ver } = useMyVerification();
   const [step, setStep] = useState(1);
   const [from, setFrom] = useState<Place>();
   const [to, setTo] = useState<Place>();
@@ -30,13 +37,34 @@ export default function Publicar() {
   const [capacity, setCapacity] = useState(3);
   const [maxWeightKg, setMaxWeight] = useState(10);
   const [priceCents, setPrice] = useState(0);
+  const [onlyVerified, setOnlyVerified] = useState(true);
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [route, setRoute] = useState<{ km: number; source: 'carretera' | 'estimada' }>();
 
-  const km = from && to ? distanceKm(from, to) : 0;
+  // Distancia por carretera (la calcula el servidor; si no puede, usa la estimación)
+  useEffect(() => {
+    setRoute(undefined);
+    if (!from || !to) return;
+    let alive = true;
+    routeDistance(from, to)
+      .then((r) => { if (alive) setRoute(r ?? { km: distanceKm(from, to), source: 'estimada' }); })
+      .catch(() => { if (alive) setRoute({ km: distanceKm(from, to), source: 'estimada' }); });
+    return () => { alive = false; };
+  }, [from, to]);
+
+  const km = route?.km ?? 0;
+  const capPerKmCents = Math.round((cfg?.capPerKm ?? 0.26) * 100);
+  const capCents = km * capPerKmCents;
   const suggested = km ? suggestedCents(km, maxSize) : 0;
-  const range = rangeCents(suggested);
-  useEffect(() => { setPrice(Math.min(Math.max(suggested, range.min), range.max)); }, [suggested]); // eslint-disable-line react-hooks/exhaustive-deps
+  const base = rangeCents(suggested);
+  const range = { min: base.min, max: Math.min(base.max, capCents) };
+  const tooShort = !!km && km >= 5 && capCents < base.min;
+  const minKm = Math.ceil(base.min / capPerKmCents);
+  useEffect(() => { setPrice(Math.min(Math.max(suggested, range.min), range.max)); }, [suggested, capCents]); // eslint-disable-line react-hooks/exhaustive-deps
+  const maxPackages = priceCents > 0 ? Math.max(0, Math.min(6, Math.floor(capCents / priceCents))) : 0;
+  useEffect(() => { if (maxPackages > 0 && capacity > maxPackages) setCapacity(maxPackages); }, [maxPackages]); // eslint-disable-line react-hooks/exhaustive-deps
+  const needsPayouts = !!cfg?.carrierVerificationRequired && ver !== undefined && !ver.verified;
 
   const departureAt = isTime(departure) ? at(date, departure) : null;
   let arrivalAt = isTime(arrival) ? at(date, arrival) : null;
@@ -44,15 +72,15 @@ export default function Publicar() {
   const future = !!departureAt && departureAt.getTime() > Date.now() + 30 * 60_000;
 
   const can = [
-    !!from && !!to && km >= 5,
+    !!from && !!to && !!route && km >= 5 && !tooShort && !needsPayouts,
     !!departureAt && !!arrivalAt && future,
-    priceCents >= range.min && priceCents <= range.max,
+    priceCents >= range.min && priceCents <= range.max && capacity >= 1 && capacity <= maxPackages,
     agree,
   ][step - 1];
 
   const publish = async () => {
     setBusy(true);
-    const id = await run(() => publishTrip({ from: from!, to: to!, departureAt: departureAt!, arrivalAt: arrivalAt!, capacity, maxSize, maxWeightKg, priceCents }), 'No se ha podido publicar');
+    const id = await run(() => publishTrip({ from: from!, to: to!, departureAt: departureAt!, arrivalAt: arrivalAt!, capacity, maxSize, maxWeightKg, priceCents, requireVerifiedSender: onlyVerified }), 'No se ha podido publicar');
     setBusy(false);
     if (!id) return;
     qc.invalidateQueries({ queryKey: ['myTrips'] });
@@ -60,7 +88,7 @@ export default function Publicar() {
     router.push(`/publicado/${id}`);
   };
 
-  const subtitles = ['Publica tu trayecto y transporta paquetes. Te convertirás en carrier y compartirás gastos.', '¿Cuándo sales y cuánto espacio tienes?', 'Te proponemos un precio por paquete. Puedes ajustarlo.', 'Revisa tu trayecto antes de publicarlo.'];
+  const subtitles = ['Publica tu trayecto y transporta paquetes. Te convertirás en carrier y compartirás gastos.', '¿Cuándo sales y qué tamaño aceptas?', 'Elige el precio por paquete y cuántos llevas, dentro de los gastos de tu viaje.', 'Revisa tu trayecto antes de publicarlo.'];
 
   return (
     <Screen title="Publicar" subtitle={subtitles[step - 1]} back={false} tabs
@@ -75,9 +103,19 @@ export default function Publicar() {
         <Card>
           <AddressField label="Punto de recogida" icon="location-outline" placeholder="Desde dónde sales (calle, barrio…)" value={from} onChange={setFrom} />
           <AddressField label="Punto de entrega" icon="flag-outline" placeholder="A dónde vas" value={to} onChange={setTo} />
-          {from && to && km < 5 ? <Small style={{ color: colors.danger }}>El origen y el destino están demasiado cerca.</Small> : null}
+          {from && to && !route ? <Small>Calculando la distancia…</Small> : null}
+          {route && km < 5 ? <Small style={{ color: colors.danger }}>El origen y el destino están demasiado cerca.</Small> : null}
+          {tooShort ? <Small style={{ color: colors.danger }}>Este trayecto ({km} km) es demasiado corto para compartir gastos. En WannaSend se publican trayectos a partir de unos {minKm} km.</Small> : null}
+          {route && !tooShort && km >= 5 ? <Small>Unos {km} km {route.source === 'carretera' ? 'por carretera' : '(estimación)'}.</Small> : null}
           <View><Label>Cuándo</Label><DatePicker value={date} onChange={setDate} /></View>
           <Small>Indica un punto de encuentro público y cómodo. Solo lo verán usuarios registrados.</Small>
+        </Card>
+      ) : null}
+      {step === 1 && needsPayouts ? (
+        <Card>
+          <H3>Activa tus cobros para publicar</H3>
+          <Muted>Todos los carriers de WannaSend tienen la identidad verificada. Se hace una sola vez con Stripe, al configurar dónde recibes tu dinero.</Muted>
+          <Button small label="Configurar cobros" icon="shield-checkmark-outline" onPress={() => router.push('/ganancias')} />
         </Card>
       ) : null}
 
@@ -89,7 +127,6 @@ export default function Publicar() {
           </Row>
           {departureAt && !future ? <Small style={{ color: colors.danger }}>La salida debe ser al menos dentro de 30 minutos.</Small> : null}
           <View><Label>Tamaño máximo que aceptas</Label><Chips options={SIZES} value={maxSize} onChange={setMaxSize} /></View>
-          <Row style={{ justifyContent: 'space-between' }}><Muted>Paquetes que puedes llevar</Muted><Stepper value={capacity} onChange={setCapacity} min={1} max={6} /></Row>
           <Row style={{ justifyContent: 'space-between' }}><Muted>Peso máximo por paquete</Muted><Stepper value={maxWeightKg} onChange={setMaxWeight} min={1} max={30} format={(n) => `${n} kg`} /></Row>
         </Card>
       ) : null}
@@ -103,12 +140,22 @@ export default function Publicar() {
             <Small style={{ textAlign: 'center' }}>Rango permitido: {euros(range.min / 100)} – {euros(range.max / 100)} según distancia (unos {km} km) y tamaño.</Small>
           </Card>
           <Card>
+            <H3>Gastos de tu viaje</H3>
+            <KeyValue k={`${km} km × ${euros(capPerKmCents / 100).replace(' €', '')} €/km`} v={euros(capCents / 100)} accent />
+            <Small>Es lo máximo que puedes recibir sumando todos los paquetes: en WannaSend compartes los gastos del viaje, no cobras un servicio.</Small>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <Muted>Paquetes que llevas</Muted>
+              <Stepper value={Math.min(capacity, Math.max(1, maxPackages))} onChange={setCapacity} min={1} max={Math.max(1, maxPackages)} />
+            </Row>
+            <Small>Con {euros(priceCents / 100)} por paquete caben hasta {maxPackages} paquete{maxPackages === 1 ? '' : 's'}{maxPackages === 6 ? ' (el máximo por trayecto)' : ''}.</Small>
+          </Card>
+          <Card>
             <H3>Lo que paga el sender</H3>
             <KeyValue k="Tu aportación" v={euros(priceCents / 100)} />
             <KeyValue k="Gastos de gestión e IVA" v={euros(breakdown(priceCents / 100).fees)} />
             <Divider />
             <KeyValue k="Total" v={euros(breakdown(priceCents / 100).total)} bold />
-            <InfoBox icon="wallet-outline">Con {capacity} paquete{capacity > 1 ? 's' : ''} ganarías hasta {euros((priceCents * capacity) / 100)}</InfoBox>
+            <InfoBox icon="wallet-outline">Con {capacity} paquete{capacity > 1 ? 's' : ''} recibirías hasta {euros((priceCents * capacity) / 100)} para cubrir gastos</InfoBox>
           </Card>
         </>
       ) : null}
@@ -124,6 +171,11 @@ export default function Publicar() {
             <KeyValue k="Tamaño máximo" v={maxSize} />
             <KeyValue k="Peso máximo" v={`${maxWeightKg} kg`} />
             <KeyValue k="Precio por paquete" v={euros(priceCents / 100)} accent />
+            <KeyValue k="Gastos del viaje (tope)" v={euros(capCents / 100)} />
+          </Card>
+          <Card>
+            <ToggleRow title="Solo acepto paquetes de usuarios verificados" subtitle="Quien te pida llevar un paquete tendrá que verificar su identidad con Stripe. Recomendado."
+              value={onlyVerified} onChange={setOnlyVerified} />
           </Card>
           <Checkbox checked={agree} onChange={setAgree}>
             <Muted>Revisaré cada paquete al recogerlo y no transportaré objetos prohibidos.</Muted>

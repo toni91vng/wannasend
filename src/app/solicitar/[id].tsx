@@ -1,19 +1,28 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { Button, Card, Chips, Field, H3, Label, Loading, Row, Screen, Small, Stepper, Steps } from '@/components/ui';
+import { Text } from 'react-native';
+import { PhotoPicker } from '@/components/Photos';
+import { Button, Card, Checkbox, Chips, Field, H3, InfoBox, Label, Loading, Muted, Row, Screen, Small, Stepper, Steps } from '@/components/ui';
 import { getMyPhone, NewPackage } from '@/data/api';
-import { useTrip } from '@/data/hooks';
+import { useAppConfig, useMyVerification, useProfile, useTrip } from '@/data/hooks';
+import { colors, fonts } from '@/lib/theme';
 import { useMe } from '@/data/session';
 import { CONTENT_TYPES, PackageSize, SIZE_HINT, SIZES } from '@/data/types';
 
 const phoneOk = (p: string) => /^\+?[0-9 ]{9,16}$/.test(p.trim());
 
-/** Paso 1: datos del paquete y del destinatario. */
+/** Paso 1: datos del paquete (con foto, valor declarado y declaración de no prohibidos) y del destinatario. */
 export default function Solicitar() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const me = useMe();
   const { data: t } = useTrip(id);
+  const { data: cfg } = useAppConfig();
+  const { data: carrier } = useProfile(t?.carrierId);
+  const { data: ver } = useMyVerification();
+  const [photoPath, setPhotoPath] = useState<string>();
+  const [value, setValue] = useState('');
+  const [noProhibited, setNoProhibited] = useState(false);
   const [size, setSize] = useState<PackageSize>('Pequeño');
   const [weight, setWeight] = useState(2);
   const [content, setContent] = useState<string>('Ropa');
@@ -25,12 +34,22 @@ export default function Solicitar() {
 
   useEffect(() => { getMyPhone(me).then(setMyPhone).catch(() => setMyPhone(null)); }, [me]);
 
-  if (!t) return <Screen title="Tu paquete"><Loading /></Screen>;
+  if (!t || !cfg) return <Screen title="Tu paquete"><Loading /></Screen>;
   const allowed = SIZES.slice(0, SIZES.indexOf(t.maxSize) + 1);
   const sizeOk = allowed.includes(size) ? size : allowed[allowed.length - 1];
 
-  const ok = recipientName.trim().length > 1 && phoneOk(recipientPhone) && (myPhone || phoneOk(myPhoneInput));
-  const pkg: NewPackage = { size: sizeOk, weightKg: Math.min(weight, t.maxWeightKg), content, description: description.trim(), recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() };
+  const declared = Number(value.replace(',', '.'));
+  const valueOk = Number.isFinite(declared) && declared >= 1 && declared <= cfg.maxDeclaredValue;
+  // ¿Se le pedirá verificar su identidad? (si el carrier lo exige o si el valor es alto)
+  const needsIdentity = cfg.senderVerificationEnabled && !ver?.verified
+    && (!!t.requireVerifiedSender || (valueOk && declared > cfg.identityValueThreshold));
+  const ok = recipientName.trim().length > 1 && phoneOk(recipientPhone) && (myPhone || phoneOk(myPhoneInput))
+    && !!photoPath && valueOk && noProhibited;
+  const pkg: NewPackage = {
+    size: sizeOk, weightKg: Math.min(weight, t.maxWeightKg), content, description: description.trim(),
+    recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim(),
+    declaredValue: valueOk ? Math.round(declared * 100) / 100 : 0, photoPath: photoPath ?? '', noProhibited,
+  };
 
   return (
     <Screen title="Tu paquete" subtitle={`${t.from} → ${t.to} · ${t.departure}`}
@@ -54,7 +73,26 @@ export default function Solicitar() {
           <Chips options={CONTENT_TYPES} value={content} onChange={setContent} />
         </View>
         <Field label="Descripción (opcional)" placeholder="Ej.: ropa y dos libros" value={description} onChangeText={setDescription} maxLength={200} />
+        <PhotoPicker value={photoPath} onChange={setPhotoPath} label="Foto del contenido (obligatoria)"
+          hint="Haz la foto con el paquete abierto. El carrier la verá antes de aceptar y la comparará al recogerlo." />
+        <Field label={`Valor aproximado del contenido (máx. ${cfg.maxDeclaredValue} €)`} icon="pricetag-outline" placeholder="Ej.: 40" value={value}
+          onChangeText={(v) => setValue(v.replace(/[^0-9.,]/g, '').slice(0, 7))} keyboardType="decimal-pad"
+          error={value && !valueOk ? (declared > cfg.maxDeclaredValue ? `No se pueden enviar objetos de más de ${cfg.maxDeclaredValue} €` : 'Indica un valor en euros') : ''} />
+        <Small>WannaSend no asegura el contenido: si algo sale mal, te devolvemos el precio del envío.</Small>
+        <Checkbox checked={noProhibited} onChange={setNoProhibited}>
+          <Muted>
+            Confirmo que el paquete no contiene{' '}
+            <Text style={{ fontFamily: fonts.semibold, color: colors.primaryDark }} onPress={() => router.push('/prohibidos')}>objetos prohibidos</Text>
+            {' '}y que soy responsable de su contenido.
+          </Muted>
+        </Checkbox>
       </Card>
+      {needsIdentity ? (
+        <InfoBox icon="shield-checkmark-outline">
+          {t.requireVerifiedSender ? `${carrier?.name ?? 'Este carrier'} solo lleva paquetes de usuarios verificados.` : `Para envíos de más de ${cfg.identityValueThreshold} € pedimos verificar la identidad.`}
+          {' '}Te lo pediremos antes de pagar. Tarda 2 minutos y WannaSend nunca ve tu DNI.
+        </InfoBox>
+      ) : null}
       <Card>
         <H3>¿Quién lo recibe?</H3>
         <Field label="Nombre del destinatario" icon="person-outline" placeholder="Nombre" value={recipientName} onChangeText={setRecipientName} maxLength={60} />

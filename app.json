@@ -40,7 +40,15 @@
           "enableGooglePay": true
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "WannaSend usa tus fotos para que puedas adjuntar la foto del paquete.",
+          "cameraPermission": "WannaSend usa la cámara para hacer la foto del paquete al enviarlo y al recogerlo.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "scheme": "wannasend",
     "experiments": {

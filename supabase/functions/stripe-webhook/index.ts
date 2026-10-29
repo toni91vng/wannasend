@@ -1,6 +1,6 @@
 // Webhook de Stripe (sin JWT; se valida la firma con STRIPE_WEBHOOK_SECRET).
 import Stripe from 'npm:stripe@17.7.0';
-import { admin, json, stripeClient } from '../_shared/common.ts';
+import { admin, json, stripeClient, syncIdentity } from '../_shared/common.ts';
 
 const crypto = Stripe.createSubtleCryptoProvider();
 
@@ -34,6 +34,15 @@ Deno.serve(async (req) => {
             .eq('id', shipmentId).is('charge_id', null);
         }
       }
+      break;
+    }
+    case 'identity.verification_session.verified':
+    case 'identity.verification_session.requires_input':
+    case 'identity.verification_session.processing':
+    case 'identity.verification_session.canceled': {
+      const vs = event.data.object as Stripe.Identity.VerificationSession;
+      const uid = vs.metadata?.user_id;
+      if (uid) await syncIdentity(stripe, uid, vs.id).catch((e) => console.error('identity sync', e));
       break;
     }
     case 'account.updated': {

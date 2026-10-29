@@ -4,6 +4,7 @@ import { Trip, User } from '@/data/types';
 import { duration, shortDate } from '@/lib/format';
 import { euros } from '@/lib/pricing';
 import { colors, fonts } from '@/lib/theme';
+import { VerifiedBadge } from './Photos';
 import { Avatar, Badge, Body, Card, H3, Rating, Row, Small } from './ui';
 
 /** Línea de horario "17:00 · Lleida / 1h55 / 18:55 · Barcelona" del Figma. */
@@ -51,6 +52,7 @@ export function TripCard({ trip, carrier, onPress, status, priceMode = 'sender',
           <Avatar name={carrier?.name ?? trip.carrierName!} size={32} />
           <H3 style={{ fontSize: 14 }}>{carrier?.name ?? trip.carrierName}</H3>
           {trip.carrierRating !== undefined || carrier ? <Rating value={carrier?.rating ?? trip.carrierRating ?? 0} /> : null}
+          {(carrier?.verified ?? trip.carrierVerified) ? <VerifiedBadge verified compact /> : null}
           <View style={{ flex: 1 }} />
           <Small>Hasta {trip.maxSize.toLowerCase()} · {trip.maxWeightKg} kg</Small>
         </Row>

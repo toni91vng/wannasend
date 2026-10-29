@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { Body, Button, Card, Divider, EmptyState, H3, InfoBox, Loading, Muted, Row, Screen, Small } from '@/components/ui';
@@ -18,12 +18,15 @@ export default function Ganancias() {
   const { data: payments } = usePaymentsEnabled();
   const status = useQuery({ queryKey: ['payoutStatus'], queryFn: payoutStatus, enabled: !!payments && paymentsSupported });
   const [busy, setBusy] = useState(false);
+  const qc = useQueryClient();
 
   const open = async (kind: 'onboarding' | 'dashboard') => {
     setBusy(true);
     try { await openPayouts(kind); } catch (e) { notify('Cobros', errorText(e)); }
     setBusy(false);
-    status.refetch();
+    await status.refetch();
+    qc.invalidateQueries({ queryKey: ['verification'] });
+    qc.invalidateQueries({ queryKey: ['profile'] });
   };
 
   return (
@@ -47,7 +50,7 @@ export default function Ganancias() {
             </>
           ) : (
             <>
-              <Muted>Para recibir el dinero de tus entregas, completa tu alta en Stripe (datos personales y cuenta bancaria). Tarda unos 5 minutos.</Muted>
+              <Muted>Para publicar trayectos y recibir el dinero de tus entregas, completa tu alta en Stripe: identidad, datos fiscales y cuenta bancaria. Tarda unos 5 minutos y verifica tu identidad para siempre.</Muted>
               <Button small label={status.data?.hasAccount ? 'Continuar el alta' : 'Configurar cobros'} loading={busy} onPress={() => open('onboarding')} />
               <Small>Lo que ganes antes de completarlo se te transferirá en cuanto termines.</Small>
             </>

@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Platform, Text, View } from 'react-native';
+import { PackagePhoto, VerifiedBadge } from '@/components/Photos';
 import { Timeline } from '@/components/TripCard';
 import {
   Avatar, Badge, BigIcon, Body, Button, Card, Divider, ErrorBox, H2, H3, InfoBox, KeyValue, Loading, Muted, Rating, Row, Screen, Small,
@@ -25,7 +26,8 @@ const STEPS: { key: string; label: string }[] = [
   { key: 'entregado', label: 'Entregado' },
 ];
 const stepIndex = (s: Shipment) =>
-  s.status === 'aceptado' ? 0 : s.status === 'en_camino' ? 2 : s.status === 'entregado' ? 3 : -1;
+  ({ aceptado: 0, recogido: 1, en_camino: 2, entregado: 3 } as Partial<Record<Shipment['status'], number>>)[s.status] ?? -1;
+const hhmm = (iso?: string | null) => (iso ? new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : undefined);
 
 /** Seguimiento de un envío (vista del sender). Se actualiza solo cuando el carrier cambia el estado. */
 export default function Envio() {
@@ -34,7 +36,7 @@ export default function Envio() {
   const { data: sh, isLoading, error } = useShipment(id);
   const t = sh?.trip;
   const { data: c } = useProfile(t?.carrierId);
-  const active = !!sh && ['aceptado', 'en_camino'].includes(sh.status);
+  const active = !!sh && ['aceptado', 'recogido', 'en_camino'].includes(sh.status);
   const { data: code } = useDeliveryCode(id, active);
   const { data: reviewed } = useHasReviewed(id, sh?.status === 'entregado');
   const [busy, setBusy] = useState(false);
@@ -76,10 +78,13 @@ export default function Envio() {
     switch (sh.status) {
       case 'pendiente_pago': return { icon: 'card-outline' as const, tone: 'amber' as const, title: 'Pago pendiente', text: `Completa el pago para enviar la solicitud a ${name}. Si no, se cancelará en 30 minutos.` };
       case 'solicitado': return { icon: 'time-outline' as const, tone: 'amber' as const, title: `Esperando respuesta de ${name}`, text: `Te avisaremos en cuanto responda. Si no responde en 12 h, la solicitud caduca. Enviada ${timeAgo(sh.requestedAt)}.` };
-      case 'aceptado': return { icon: 'checkmark' as const, tone: 'green' as const, title: '¡Envío aceptado!', text: `¡Enhorabuena! ${name} ha aceptado llevar tu paquete. Comparte el código con ${sh.recipientName}.` };
-      case 'en_camino': return { icon: 'car-outline' as const, tone: 'green' as const, title: 'Tu paquete está en camino', text: `${t.arrival} hora prevista de llegada a destino.` };
+      case 'aceptado': return { icon: 'checkmark' as const, tone: 'green' as const, title: '¡Envío aceptado!', text: `¡Enhorabuena! ${name} ha aceptado llevar tu paquete. Comparte el código con ${sh.recipientName}. Ten el paquete abierto para que lo revise al recogerlo.` };
+      case 'recogido': return { icon: 'cube-outline' as const, tone: 'green' as const, title: 'Paquete recogido', text: `${name} lo recogió${sh.pickedUpAt ? ` a las ${sh.pickedUpAt}` : ''}. Salida prevista a las ${t.departure}; te avisaremos cuando arranque.` };
+      case 'en_camino': return { icon: 'car-outline' as const, tone: 'green' as const, title: 'Tu paquete está en camino', text: `${t.startedAt ? `${name} salió a las ${hhmm(t.startedAt)}. ` : ''}Llegada prevista a las ${t.arrival}.` };
       case 'entregado': return { icon: 'gift-outline' as const, tone: 'green' as const, title: '¡Envío entregado!', text: `${sh.recipientName} ha recibido tu paquete${sh.deliveredAt ? ` a las ${sh.deliveredAt}` : ''}.` };
-      case 'rechazado': return { icon: 'close' as const, tone: 'amber' as const, title: 'Solicitud rechazada', text: `${name} no puede llevar tu paquete esta vez. ${refundText}` };
+      case 'rechazado': return sh.rejectionStage === 'recogida'
+        ? { icon: 'close' as const, tone: 'amber' as const, title: 'Paquete no recogido', text: `${name} no ha podido llevarlo porque no coincidía con lo declarado${sh.rejectionReason ? `: «${sh.rejectionReason}»` : ''}. ${refundText}` }
+        : { icon: 'close' as const, tone: 'amber' as const, title: 'Solicitud rechazada', text: `${name} no puede llevar tu paquete esta vez. ${refundText}` };
       case 'caducado': return { icon: 'hourglass-outline' as const, tone: 'amber' as const, title: 'Solicitud caducada', text: `${name} no respondió a tiempo. ${refundText}` };
       default: return { icon: 'close' as const, tone: 'amber' as const, title: 'Envío cancelado', text: `Este envío se ha cancelado. ${refundText}` };
     }
@@ -96,8 +101,9 @@ export default function Envio() {
         <Card>
           <H3>Tu paquete está</H3>
           {STEPS.map((s, i) => {
-            const done = i <= idx || (s.key === 'recogido' && !!sh.pickedUpAt);
-            const extra = s.key === 'recogido' && sh.pickedUpAt ? `a las ${sh.pickedUpAt} por ${name}`
+            const done = i <= idx;
+            const extra = s.key === 'recogido' ? (sh.pickedUpAt ? `a las ${sh.pickedUpAt} por ${name}` : '')
+              : s.key === 'en_camino' ? (t.startedAt ? `salida a las ${hhmm(t.startedAt)}` : `salida prevista a las ${t.departure}`)
               : s.key === 'entregado' ? (sh.deliveredAt ? `${sh.deliveredAt} hora final de llegada` : `${t.arrival} hora prevista`) : '';
             return (
               <Row key={s.key} gap={12} style={{ alignItems: 'flex-start' }}>
@@ -109,7 +115,7 @@ export default function Envio() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Body style={{ fontFamily: done ? fonts.semibold : fonts.medium, color: done ? colors.text : colors.muted }}>{s.label}</Body>
-                  {extra && done ? <Small>{extra}</Small> : null}
+                  {extra && (done || i === idx + 1) ? <Small>{extra}</Small> : null}
                 </View>
               </Row>
             );
@@ -120,7 +126,7 @@ export default function Envio() {
       <Card>
         <Row>
           <Avatar name={name} />
-          <View style={{ flex: 1 }}><H3>{name}</H3>{c ? <Rating value={c.rating} reviews={c.reviews} /> : null}</View>
+          <View style={{ flex: 1, gap: 2 }}><H3>{name}</H3>{c ? <Rating value={c.rating} reviews={c.reviews} /> : null}<VerifiedBadge verified={c?.verified} /></View>
           <Badge label={STATUS[sh.status].label} tone={STATUS[sh.status].tone} />
         </Row>
         <Divider />
@@ -129,8 +135,16 @@ export default function Envio() {
         <Divider />
         <KeyValue k="Paquete" v={`${sh.size} · ${String(sh.weightKg).replace('.', ',')} kg`} />
         <KeyValue k="Destinatario" v={sh.recipientName} />
+        <KeyValue k="Valor declarado" v={euros(sh.declaredValue)} />
         <KeyValue k={sh.refunded ? 'Reembolsado' : sh.paid ? 'Pagado' : 'Precio'} v={euros(sh.total)} accent />
       </Card>
+
+      {sh.pickupPhotoPath ? (
+        <Card>
+          <H3>Foto al recogerlo</H3>
+          <PackagePhoto path={sh.pickupPhotoPath} />
+        </Card>
+      ) : null}
 
       {active ? (
         <>

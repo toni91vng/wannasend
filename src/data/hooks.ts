@@ -58,4 +58,12 @@ export function useAction<A extends unknown[], R>(fn: (...args: A) => Promise<R>
   });
 }
 
-export const usePaymentsEnabled = () => useQuery({ queryKey: ['paymentsEnabled'], queryFn: api.paymentsEnabled, staleTime: 5 * 60_000 });
+export const useAppConfig = () => useQuery({ queryKey: ['appConfig'], queryFn: api.getAppConfig, staleTime: 5 * 60_000 });
+export const usePaymentsEnabled = () => {
+  const q = useAppConfig();
+  return { ...q, data: q.data?.paymentsEnabled };
+};
+export const useMyVerification = () => {
+  const me = useMe();
+  return useQuery({ queryKey: ['verification', me], queryFn: api.myVerification, enabled: !!me });
+};

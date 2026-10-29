@@ -44,3 +44,21 @@ export async function openPayouts(kind: 'onboarding' | 'dashboard') {
   const { url } = await invoke<{ url: string }>({ action: kind });
   await WebBrowser.openAuthSessionAsync(url, 'wannasend://ganancias');
 }
+
+export type IdentityStatus = 'sin_verificar' | 'pendiente' | 'verificado' | 'fallido';
+
+/**
+ * Verificación de identidad con Stripe Identity (DNI o pasaporte + selfie). Se hace en la web de Stripe:
+ * WannaSend nunca ve el documento, solo recibe el resultado.
+ */
+export async function verifyIdentity(): Promise<IdentityStatus> {
+  const r = await invoke<{ url?: string; status?: IdentityStatus }>({ action: 'identity' });
+  if (r.status === 'verificado') return 'verificado';
+  if (r.url) await WebBrowser.openAuthSessionAsync(r.url, 'wannasend://verificar');
+  return identityStatus();
+}
+
+export async function identityStatus(): Promise<IdentityStatus> {
+  const r = await invoke<{ status: IdentityStatus }>({ action: 'identity_status' });
+  return r.status;
+}

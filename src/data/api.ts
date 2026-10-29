@@ -1,7 +1,9 @@
+import { decode } from 'base64-arraybuffer';
+import { SaveFormat, ImageManipulator } from 'expo-image-manipulator';
 import { supabase } from '@/lib/supabase';
 import {
-  Alert, ConversationSummary, DbSize, fromDbSize, Message, Movement, PackageSize, Place, Review, Shipment,
-  ShipmentStatus, toDbSize, Trip, TripStatus, User,
+  Alert, AppConfig, ConversationSummary, DbSize, fromDbSize, Message, Movement, PackageSize, Place, Review, Shipment,
+  ShipmentStatus, toDbSize, Trip, TripStatus, User, Verification,
 } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -15,13 +17,15 @@ const localDate = (iso: string) => {
 };
 const euros = (cents: number) => Math.round(cents) / 100;
 
-const TRIP_COLS = 'id, carrier_id, from_label, from_city, to_label, to_city, departure_at, arrival_at, capacity, max_size, max_weight_kg, price_cents, status';
+const TRIP_COLS = 'id, carrier_id, from_label, from_city, to_label, to_city, departure_at, arrival_at, capacity, max_size, max_weight_kg, price_cents, status, distance_km, distance_source, earnings_cap_cents, started_at, require_verified_sender';
 
 type TripRow = {
   id: string; carrier_id: string; from_label: string; from_city: string; to_label: string; to_city: string;
   departure_at: string; arrival_at: string; capacity?: number; booked?: number; seats_left?: number;
   max_size: DbSize; max_weight_kg: number; price_cents: number; total_cents?: number; status?: TripStatus;
-  carrier_name?: string; carrier_rating?: number; carrier_reviews?: number;
+  carrier_name?: string; carrier_rating?: number; carrier_reviews?: number; carrier_verified?: boolean;
+  distance_km?: number; distance_source?: 'carretera' | 'estimada'; earnings_cap_cents?: number | null;
+  cap_remaining_cents?: number | null; started_at?: string | null; require_verified_sender?: boolean;
 };
 
 export function toTrip(r: TripRow): Trip {
@@ -47,6 +51,13 @@ export function toTrip(r: TripRow): Trip {
     carrierName: r.carrier_name,
     carrierRating: r.carrier_rating !== undefined ? Number(r.carrier_rating) : undefined,
     carrierReviews: r.carrier_reviews,
+    carrierVerified: r.carrier_verified,
+    distanceKm: r.distance_km,
+    distanceSource: r.distance_source,
+    earningsCap: r.earnings_cap_cents === undefined ? undefined : r.earnings_cap_cents === null ? null : euros(r.earnings_cap_cents),
+    capRemaining: r.cap_remaining_cents === undefined ? undefined : r.cap_remaining_cents === null ? null : euros(r.cap_remaining_cents),
+    startedAt: r.started_at,
+    requireVerifiedSender: r.require_verified_sender,
   };
 }
 
@@ -55,7 +66,9 @@ type ShipmentRow = {
   recipient_name: string; status: ShipmentStatus; requested_at: string; picked_up_at: string | null; delivered_at: string | null;
   carrier_amount_cents: number; total_cents: number;
   paid_at?: string | null; refunded_at?: string | null; transferred_at?: string | null;
-  trip?: TripRow | null; sender?: { name: string } | null; contact?: { recipient_phone: string } | null;
+  declared_value_cents: number; photo_path?: string; pickup_photo_path?: string | null;
+  rejection_stage?: 'solicitud' | 'recogida' | null; rejection_reason?: string | null;
+  trip?: TripRow | null; sender?: { name: string; verified?: boolean } | null; contact?: { recipient_phone: string } | null;
 };
 
 function toShipment(r: ShipmentRow): Shipment {
@@ -64,6 +77,7 @@ function toShipment(r: ShipmentRow): Shipment {
     tripId: r.trip_id,
     senderId: r.sender_id,
     senderName: r.sender?.name,
+    senderVerified: r.sender?.verified,
     size: fromDbSize(r.size),
     weightKg: Number(r.weight_kg),
     content: r.content,
@@ -79,11 +93,16 @@ function toShipment(r: ShipmentRow): Shipment {
     paid: !!r.paid_at,
     refunded: !!r.refunded_at,
     transferred: !!r.transferred_at,
+    declaredValue: euros(r.declared_value_cents ?? 0),
+    photoPath: r.photo_path,
+    pickupPhotoPath: r.pickup_photo_path,
+    rejectionStage: r.rejection_stage,
+    rejectionReason: r.rejection_reason,
     trip: r.trip ? toTrip(r.trip) : undefined,
   };
 }
 
-const SHIPMENT_COLS = 'id, trip_id, sender_id, size, weight_kg, content, description, recipient_name, status, requested_at, picked_up_at, delivered_at, carrier_amount_cents, total_cents, paid_at, refunded_at, transferred_at';
+const SHIPMENT_COLS = 'id, trip_id, sender_id, size, weight_kg, content, description, recipient_name, status, requested_at, picked_up_at, delivered_at, carrier_amount_cents, total_cents, paid_at, refunded_at, transferred_at, declared_value_cents, photo_path, pickup_photo_path, rejection_stage, rejection_reason';
 
 function check<T>(res: { data: T; error: unknown }): T {
   if (res.error) throw res.error;
@@ -179,6 +198,7 @@ export async function getTrip(id: string): Promise<Trip | null> {
 
 export async function publishTrip(t: {
   from: Place; to: Place; departureAt: Date; arrivalAt: Date; capacity: number; maxSize: PackageSize; maxWeightKg: number; priceCents: number;
+  requireVerifiedSender: boolean;
 }): Promise<string> {
   const point = (p: Place) => `SRID=4326;POINT(${p.lng} ${p.lat})`;
   const { data: { user } } = await supabase.auth.getUser();
@@ -188,8 +208,20 @@ export async function publishTrip(t: {
     to_label: t.to.label, to_city: t.to.city || t.to.label, to_point: point(t.to),
     departure_at: t.departureAt.toISOString(), arrival_at: t.arrivalAt.toISOString(),
     capacity: t.capacity, max_size: toDbSize(t.maxSize), max_weight_kg: t.maxWeightKg, price_cents: t.priceCents,
+    require_verified_sender: t.requireVerifiedSender,
   }).select('id').single()) as { id: string };
   return row.id;
+}
+/** Distancia por carretera calculada en el servidor (Google). Si no está disponible, devuelve la estimación. */
+export async function routeDistance(from: Place, to: Place): Promise<{ km: number; source: 'carretera' | 'estimada' } | null> {
+  const { data, error } = await supabase.functions.invoke('places', {
+    body: { action: 'route', from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng } },
+  });
+  if (error || !data?.km) return null;
+  return { km: data.km, source: data.source };
+}
+export async function startTrip(id: string) {
+  return check(await supabase.rpc('start_trip', { p_trip: id })) as number;
 }
 export async function cancelTrip(id: string) {
   check(await supabase.from('trips').update({ status: 'cancelado' }).eq('id', id));
@@ -199,7 +231,7 @@ export async function myTrips(userId: string): Promise<(Trip & { pending: number
   const rows = check(await supabase.from('trips').select(`${TRIP_COLS}, shipments(status)`)
     .eq('carrier_id', userId).order('departure_at', { ascending: false }).limit(50)) as any[];
   return rows.map((r) => ({
-    ...toTrip({ ...r, booked: r.shipments.filter((s: any) => ['aceptado', 'en_camino', 'entregado'].includes(s.status)).length }),
+    ...toTrip({ ...r, booked: r.shipments.filter((s: any) => ['aceptado', 'recogido', 'en_camino', 'entregado'].includes(s.status)).length }),
     pending: r.shipments.filter((s: any) => s.status === 'solicitado').length,
   }));
 }
@@ -210,13 +242,43 @@ export async function myTrips(userId: string): Promise<(Trip & { pending: number
 
 export interface NewPackage {
   size: PackageSize; weightKg: number; content: string; description: string; recipientName: string; recipientPhone: string;
+  declaredValue: number; // €
+  photoPath: string;
+  noProhibited: boolean;
 }
 
 export async function requestShipment(tripId: string, p: NewPackage): Promise<string> {
   return check(await supabase.rpc('request_shipment', {
     p_trip: tripId, p_size: toDbSize(p.size), p_weight: p.weightKg, p_content: p.content,
     p_description: p.description, p_recipient_name: p.recipientName, p_recipient_phone: p.recipientPhone,
+    p_declared_value_cents: Math.round(p.declaredValue * 100), p_photo_path: p.photoPath, p_no_prohibited: p.noProhibited,
   })) as string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Fotos de paquetes (privadas)                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Reduce la foto (1280 px, JPEG) y la sube a la carpeta del usuario. Al volver a codificarla se pierden los
+ * metadatos EXIF, incluida la ubicación GPS. Devuelve la ruta para guardarla en el envío.
+ */
+export async function uploadPackagePhoto(uri: string): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Inicia sesión');
+  const ref = await ImageManipulator.manipulate(uri).resize({ width: 1280 }).renderAsync();
+  const img = await ref.saveAsync({ compress: 0.7, format: SaveFormat.JPEG, base64: true });
+  const rand = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const path = `${user.id}/${rand}.jpg`;
+  const { error } = await supabase.storage.from('package-photos').upload(path, decode(img.base64!), { contentType: 'image/jpeg' });
+  if (error) throw error;
+  return path;
+}
+
+/** Enlace temporal (1 h) para ver una foto. Solo funciona para el sender y el carrier del envío. */
+export async function photoUrl(path: string): Promise<string | null> {
+  const { data } = await supabase.storage.from('package-photos').createSignedUrl(path, 3600);
+  return data?.signedUrl ?? null;
 }
 
 export async function myShipments(userId: string): Promise<Shipment[]> {
@@ -228,21 +290,23 @@ export async function myShipments(userId: string): Promise<Shipment[]> {
 
 export async function getShipment(id: string): Promise<Shipment | null> {
   const r = check(await supabase.from('shipments')
-    .select(`${SHIPMENT_COLS}, trip:trips(${TRIP_COLS}), sender:profiles!shipments_sender_id_fkey(name), contact:shipment_contacts(recipient_phone)`)
+    .select(`${SHIPMENT_COLS}, trip:trips(${TRIP_COLS}), sender:profiles!shipments_sender_id_fkey(name, verified), contact:shipment_contacts(recipient_phone)`)
     .eq('id', id).maybeSingle()) as unknown as ShipmentRow | null;
   return r ? toShipment(r) : null;
 }
 
 export async function tripShipments(tripId: string): Promise<Shipment[]> {
   const rows = check(await supabase.from('shipments')
-    .select(`${SHIPMENT_COLS}, sender:profiles!shipments_sender_id_fkey(name), contact:shipment_contacts(recipient_phone)`)
+    .select(`${SHIPMENT_COLS}, sender:profiles!shipments_sender_id_fkey(name, verified), contact:shipment_contacts(recipient_phone)`)
     .eq('trip_id', tripId).order('requested_at')) as unknown as ShipmentRow[];
   return rows.map(toShipment);
 }
 
 export const respondShipment = async (id: string, accept: boolean) => { check(await supabase.rpc('respond_shipment', { p_shipment: id, p_accept: accept })); };
 export const cancelShipment = async (id: string) => { check(await supabase.rpc('cancel_shipment', { p_shipment: id })); };
-export const markPickedUp = async (id: string) => { check(await supabase.rpc('mark_picked_up', { p_shipment: id })); };
+/** Revisión en la recogida: coincide (foto) o no coincide (foto + motivo → rechazo y reembolso). */
+export const pickupShipment = async (id: string, ok: boolean, photoPath: string, reason?: string) =>
+  check(await supabase.rpc('pickup_shipment', { p_shipment: id, p_ok: ok, p_photo_path: photoPath, p_reason: reason ?? null })) as ShipmentStatus;
 export const confirmDelivery = async (id: string, code: string) =>
   check(await supabase.rpc('confirm_delivery', { p_shipment: id, p_code: code })) as 'ok' | 'incorrecto' | 'bloqueado';
 export const getDeliveryCode = async (id: string) => check(await supabase.rpc('get_delivery_code', { p_shipment: id })) as string | null;
@@ -330,7 +394,25 @@ export async function report(r: { reportedUserId?: string; shipmentId?: string; 
 /* Configuración                                                       */
 /* ------------------------------------------------------------------ */
 
+export async function getAppConfig(): Promise<AppConfig> {
+  const r = check(await supabase.from('app_config').select(
+    'payments_enabled, trip_cap_cents_per_km, max_declared_value_cents, identity_value_threshold_cents, prohibited_list_version, carrier_verification_required, sender_verification_enabled',
+  ).maybeSingle()) as any;
+  return {
+    paymentsEnabled: !!r?.payments_enabled,
+    capPerKm: (r?.trip_cap_cents_per_km ?? 26) / 100,
+    maxDeclaredValue: (r?.max_declared_value_cents ?? 30000) / 100,
+    identityValueThreshold: (r?.identity_value_threshold_cents ?? 10000) / 100,
+    prohibitedListVersion: r?.prohibited_list_version ?? '',
+    carrierVerificationRequired: !!r?.carrier_verification_required,
+    senderVerificationEnabled: !!r?.sender_verification_enabled,
+  };
+}
 export async function paymentsEnabled(): Promise<boolean> {
-  const r = check(await supabase.from('app_config').select('payments_enabled').maybeSingle()) as { payments_enabled: boolean } | null;
-  return !!r?.payments_enabled;
+  return (await getAppConfig()).paymentsEnabled;
+}
+
+export async function myVerification(): Promise<Verification> {
+  const r = (check(await supabase.rpc('my_verification')) as any[])[0];
+  return { identityStatus: r?.identity_status ?? 'sin_verificar', payoutsReady: !!r?.payouts_ready, verified: !!r?.verified };
 }

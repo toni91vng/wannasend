@@ -3,7 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Button, Card, Divider, H3, InfoBox, KeyValue, Loading, Row, Screen, Small, Steps } from '@/components/ui';
 import { NewPackage, requestShipment, setMyPhone } from '@/data/api';
-import { usePaymentsEnabled, useProfile, useTrip } from '@/data/hooks';
+import { useAppConfig, useMyVerification, useProfile, useTrip } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { notify } from '@/lib/notify';
 import { payShipment } from '@/lib/payments';
@@ -22,10 +22,15 @@ export default function Pago() {
   const me = useMe();
   const { data: t } = useTrip(id);
   const { data: carrier } = useProfile(t?.carrierId);
-  const { data: payments } = usePaymentsEnabled();
+  const { data: cfg } = useAppConfig();
+  const { data: ver } = useMyVerification();
+  const payments = cfg?.paymentsEnabled;
   const [busy, setBusy] = useState(false);
-  if (!t || payments === undefined) return <Screen title="Pago"><Loading /></Screen>;
+  if (!t || !cfg) return <Screen title="Pago"><Loading /></Screen>;
   const p: NewPackage = JSON.parse(pkg);
+  // Identidad: si el carrier solo acepta verificados o si el valor declarado es alto
+  const needsIdentity = cfg.senderVerificationEnabled && !ver?.verified
+    && (!!t.requireVerifiedSender || p.declaredValue > cfg.identityValueThreshold);
 
   const go = (sid: string) => { router.dismissAll(); router.push(`/envio/${sid}`); };
 
@@ -34,7 +39,7 @@ export default function Pago() {
     const sid = await run(async () => {
       if (myPhone) await setMyPhone(me, myPhone);
       return requestShipment(t.id, p);
-    }, 'No se ha podido crear la solicitud');
+    }, 'No se ha podido crear la solicitud', (msg) => /Verifica tu identidad/.test(msg) ? () => router.push('/verificar') : undefined);
     if (!sid) { setBusy(false); return; }
     if (!payments) { setBusy(false); go(sid); return; }
     try {
@@ -51,7 +56,9 @@ export default function Pago() {
   return (
     <Screen title="Pago"
       footer={<>
-        <Button label={payments ? `Pagar ${euros(t.total)}` : 'Enviar solicitud'} loading={busy} onPress={send} />
+        {needsIdentity
+          ? <Button label="Verificar mi identidad" icon="shield-checkmark-outline" onPress={() => router.push('/verificar')} />
+          : <Button label={payments ? `Pagar ${euros(t.total)}` : 'Enviar solicitud'} loading={busy} onPress={send} />}
         {payments ? <Row style={{ justifyContent: 'center' }} gap={6}><Ionicons name="lock-closed" size={14} color={colors.muted} /><Small>Pago seguro con Stripe. WannaSend nunca ve los datos de tu tarjeta.</Small></Row> : null}
       </>}
     >
@@ -67,9 +74,16 @@ export default function Pago() {
       <Card>
         <H3>Tu paquete</H3>
         <KeyValue k="Tamaño y peso" v={`${p.size} · ${String(p.weightKg).replace('.', ',')} kg`} />
+        <KeyValue k="Valor declarado" v={euros(p.declaredValue)} />
         <KeyValue k="Contenido" v={p.content} />
         <KeyValue k="Destinatario" v={p.recipientName} />
       </Card>
+      {needsIdentity ? (
+        <Card>
+          <H3>Verifica tu identidad para continuar</H3>
+          <Small>{t.requireVerifiedSender ? `${carrier?.name ?? 'Este carrier'} solo lleva paquetes de usuarios verificados.` : `Para envíos de más de ${cfg.identityValueThreshold} € pedimos verificar la identidad.`} Se hace una sola vez con Stripe y tarda 2 minutos. WannaSend nunca ve tu DNI.</Small>
+        </Card>
+      ) : null}
       {payments ? (
         <InfoBox icon="shield-checkmark-outline">
           Cobramos ahora y guardamos el dinero hasta la entrega. Si {carrier?.name ?? 'el carrier'} rechaza la solicitud o no responde en 12 h, te lo devolvemos automáticamente.

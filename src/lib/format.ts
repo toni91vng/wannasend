@@ -38,6 +38,7 @@ export const STATUS: Record<ShipmentStatus, { label: string; tone: 'green' | 'am
   pendiente_pago: { label: 'Pago pendiente', tone: 'amber' },
   solicitado: { label: 'Pendiente', tone: 'amber' },
   aceptado: { label: 'Aceptado', tone: 'green' },
+  recogido: { label: 'Recogido', tone: 'green' },
   en_camino: { label: 'En camino', tone: 'green' },
   entregado: { label: 'Entregado', tone: 'gray' },
   rechazado: { label: 'Rechazado', tone: 'red' },

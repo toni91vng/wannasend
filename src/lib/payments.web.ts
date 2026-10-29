@@ -9,3 +9,10 @@ export async function payoutStatus() {
 export async function openPayouts(_kind: 'onboarding' | 'dashboard') {
   throw new Error('Configura tus cobros desde la app del móvil.');
 }
+export type IdentityStatus = 'sin_verificar' | 'pendiente' | 'verificado' | 'fallido';
+export async function verifyIdentity(): Promise<IdentityStatus> {
+  throw new Error('Verifica tu identidad desde la app del móvil.');
+}
+export async function identityStatus(): Promise<IdentityStatus> {
+  return 'sin_verificar';
+}
