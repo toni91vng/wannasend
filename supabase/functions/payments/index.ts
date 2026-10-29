@@ -3,7 +3,7 @@
 //  - onboarding:    crea (si hace falta) la cuenta Connect del carrier y devuelve el enlace de alta en Stripe.
 //  - dashboard:     enlace al panel Express del carrier (ver cobros y transferencias).
 //  - status:        si el carrier ya puede recibir transferencias.
-import { admin, callerId, CORS, json, stripeClient } from '../_shared/common.ts';
+import { admin, callerId, carrierOnboardingLink, carrierTransfersActive, CORS, createCarrierAccount, json, stripeClient } from '../_shared/common.ts';
 
 const RETURN_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/stripe-return`;
 
@@ -47,37 +47,20 @@ Deno.serve(async (req) => {
       if (!accountId) {
         if (body.action !== 'onboarding') return json({ ready: false, hasAccount: false });
         const { data: user } = await db.auth.admin.getUserById(uid);
-        // Marketplace: cuenta solo para recibir transferencias; la plataforma asume comisiones y riesgo (recomendación de Stripe)
-        const acct = await stripe.accounts.create({
-          country: 'ES',
-          email: user.user?.email ?? undefined,
-          controller: {
-            fees: { payer: 'application' },
-            losses: { payments: 'application' },
-            stripe_dashboard: { type: 'express' },
-            requirement_collection: 'stripe',
-          },
-          capabilities: { transfers: { requested: true } },
-          business_type: 'individual',
-          metadata: { user_id: uid },
-        }, { idempotencyKey: `acct-${uid}` });
+        const acct = await createCarrierAccount(uid, user.user?.email ?? undefined);
         accountId = acct.id;
         await db.from('profile_private').update({ stripe_account_id: accountId }).eq('id', uid);
       }
 
-      const acct = await stripe.accounts.retrieve(accountId);
-      const ready = acct.capabilities?.transfers === 'active';
-      if (ready) await db.from('profile_private').update({ stripe_transfers_enabled: true }).eq('id', uid);
+      const ready = await carrierTransfersActive(accountId);
+      await db.from('profile_private').update({ stripe_transfers_enabled: ready }).eq('id', uid);
 
       if (body.action === 'status') return json({ ready, hasAccount: true });
-      if (body.action === 'dashboard' && acct.details_submitted) {
+      if (body.action === 'dashboard' && ready) {
         const link = await stripe.accounts.createLoginLink(accountId);
         return json({ url: link.url, ready });
       }
-      const link = await stripe.accountLinks.create({
-        account: accountId, type: 'account_onboarding', return_url: RETURN_URL, refresh_url: RETURN_URL,
-      });
-      return json({ url: link.url, ready });
+      return json({ url: await carrierOnboardingLink(accountId, RETURN_URL), ready });
     }
 
     return json({ error: 'unknown_action' }, 400);

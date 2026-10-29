@@ -2,7 +2,7 @@
 //  1. Reembolsa los envíos pagados que se rechazaron, caducaron o se cancelaron.
 //  2. Transfiere su parte al carrier de los envíos entregados (si ya completó el alta en Stripe).
 // Es idempotente: se puede ejecutar las veces que haga falta.
-import { admin, json, stripeClient } from '../_shared/common.ts';
+import { admin, carrierTransfersActive, json, stripeClient } from '../_shared/common.ts';
 
 Deno.serve(async (req) => {
   const db = admin();
@@ -31,7 +31,13 @@ Deno.serve(async (req) => {
   for (const s of (toPay ?? []) as any[]) {
     const carrier = s.trip?.carrier_id;
     const { data: priv } = await db.from('profile_private').select('stripe_account_id, stripe_transfers_enabled').eq('id', carrier).single();
-    if (!priv?.stripe_account_id || !priv.stripe_transfers_enabled) continue; // espera a que el carrier complete el alta
+    if (!priv?.stripe_account_id) continue; // el carrier aún no ha empezado el alta
+    if (!priv.stripe_transfers_enabled) {
+      // Las cuentas v2 no envían account.updated: se comprueba aquí si ya terminó el alta
+      const active = await carrierTransfersActive(priv.stripe_account_id).catch(() => false);
+      if (!active) continue;
+      await db.from('profile_private').update({ stripe_transfers_enabled: true }).eq('id', carrier);
+    }
     try {
       const tr = await stripe.transfers.create({
         amount: s.carrier_amount_cents, currency: 'eur', destination: priv.stripe_account_id,
