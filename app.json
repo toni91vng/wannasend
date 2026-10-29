@@ -55,7 +55,15 @@
           "backgroundColor": "#5DB075"
         }
       ],
-      "./plugins/withDisableReleaseLint"
+      "./plugins/withDisableReleaseLint",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "# Stripe: push provisioning (tarjetas emitidas) no se usa y su librería no es pública\n-dontwarn com.stripe.android.pushProvisioning.**"
+          }
+        }
+      ]
     ],
     "scheme": "wannasend",
     "experiments": {
