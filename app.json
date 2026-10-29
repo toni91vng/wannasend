@@ -56,6 +56,18 @@
     },
     "splash": {
       "backgroundColor": "#5DB075"
+    },
+    "owner": "stanarge",
+    "extra": {
+      "eas": {
+        "projectId": "6bd1efdb-c51e-4543-9fb4-93d4a121b5b2"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6bd1efdb-c51e-4543-9fb4-93d4a121b5b2"
     }
   }
 }
