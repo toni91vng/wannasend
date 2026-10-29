@@ -28,9 +28,8 @@ export default function Pago() {
   const [busy, setBusy] = useState(false);
   if (!t || !cfg) return <Screen title="Pago"><Loading /></Screen>;
   const p: NewPackage = JSON.parse(pkg);
-  // Identidad: si el carrier solo acepta verificados o si el valor declarado es alto
-  const needsIdentity = cfg.senderVerificationEnabled && !ver?.verified
-    && (!!t.requireVerifiedSender || p.declaredValue > cfg.identityValueThreshold);
+  // Todos los senders verifican su identidad una vez, al contratar su primer envío
+  const needsIdentity = cfg.senderVerificationEnabled && !ver?.verified;
 
   const go = (sid: string) => { router.dismissAll(); router.push(`/envio/${sid}`); };
 
@@ -81,7 +80,7 @@ export default function Pago() {
       {needsIdentity ? (
         <Card>
           <H3>Verifica tu identidad para continuar</H3>
-          <Small>{t.requireVerifiedSender ? `${carrier?.name ?? 'Este carrier'} solo lleva paquetes de usuarios verificados.` : `Para envíos de más de ${cfg.identityValueThreshold} € pedimos verificar la identidad.`} Se hace una sola vez con Stripe y tarda 2 minutos. WannaSend nunca ve tu DNI.</Small>
+          <Small>Para oficializar el envío, {carrier?.name ?? 'el carrier'} y tú tenéis la identidad verificada. Se hace una sola vez con Stripe y tarda 2 minutos. WannaSend nunca ve tu DNI.</Small>
         </Card>
       ) : null}
       {payments ? (

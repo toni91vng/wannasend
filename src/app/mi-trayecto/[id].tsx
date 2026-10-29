@@ -84,7 +84,6 @@ export default function MiTrayecto() {
         <KeyValue k="Plazas para paquetes" v={`${free} de ${t.capacity} libres`} accent />
         <KeyValue k="Tu aportación por paquete" v={euros(t.pricePerPackage)} />
         {t.earningsCap ? <KeyValue k={`Gastos del viaje (${t.distanceKm} km)`} v={`${euros(capLeft ?? 0)} de ${euros(t.earningsCap)} disponibles`} /> : null}
-        {t.requireVerifiedSender ? <Small>Solo aceptas paquetes de usuarios verificados.</Small> : null}
         {startedAt ? <Badge label={`En camino desde las ${startedAt}`} /> : null}
         {t.status === 'cancelado' ? <Badge label="Trayecto cancelado" tone="red" /> : null}
       </Card>

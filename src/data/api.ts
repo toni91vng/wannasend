@@ -198,7 +198,6 @@ export async function getTrip(id: string): Promise<Trip | null> {
 
 export async function publishTrip(t: {
   from: Place; to: Place; departureAt: Date; arrivalAt: Date; capacity: number; maxSize: PackageSize; maxWeightKg: number; priceCents: number;
-  requireVerifiedSender: boolean;
 }): Promise<string> {
   const point = (p: Place) => `SRID=4326;POINT(${p.lng} ${p.lat})`;
   const { data: { user } } = await supabase.auth.getUser();
@@ -208,7 +207,6 @@ export async function publishTrip(t: {
     to_label: t.to.label, to_city: t.to.city || t.to.label, to_point: point(t.to),
     departure_at: t.departureAt.toISOString(), arrival_at: t.arrivalAt.toISOString(),
     capacity: t.capacity, max_size: toDbSize(t.maxSize), max_weight_kg: t.maxWeightKg, price_cents: t.priceCents,
-    require_verified_sender: t.requireVerifiedSender,
   }).select('id').single()) as { id: string };
   return row.id;
 }

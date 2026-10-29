@@ -5,7 +5,7 @@ import { Text, View } from 'react-native';
 import { AddressField } from '@/components/AddressField';
 import {
   Badge, Button, Card, Checkbox, Chips, DatePicker, Divider, Field, H3, InfoBox, KeyValue, Label, Muted, Row, Screen,
-  Small, Stepper, Steps, ToggleRow,
+  Small, Stepper, Steps,
 } from '@/components/ui';
 import { publishTrip, routeDistance } from '@/data/api';
 import { useAppConfig, useMyVerification } from '@/data/hooks';
@@ -37,7 +37,6 @@ export default function Publicar() {
   const [capacity, setCapacity] = useState(3);
   const [maxWeightKg, setMaxWeight] = useState(10);
   const [priceCents, setPrice] = useState(0);
-  const [onlyVerified, setOnlyVerified] = useState(true);
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [route, setRoute] = useState<{ km: number; source: 'carretera' | 'estimada' }>();
@@ -80,7 +79,7 @@ export default function Publicar() {
 
   const publish = async () => {
     setBusy(true);
-    const id = await run(() => publishTrip({ from: from!, to: to!, departureAt: departureAt!, arrivalAt: arrivalAt!, capacity, maxSize, maxWeightKg, priceCents, requireVerifiedSender: onlyVerified }), 'No se ha podido publicar');
+    const id = await run(() => publishTrip({ from: from!, to: to!, departureAt: departureAt!, arrivalAt: arrivalAt!, capacity, maxSize, maxWeightKg, priceCents }), 'No se ha podido publicar');
     setBusy(false);
     if (!id) return;
     qc.invalidateQueries({ queryKey: ['myTrips'] });
@@ -173,10 +172,7 @@ export default function Publicar() {
             <KeyValue k="Precio por paquete" v={euros(priceCents / 100)} accent />
             <KeyValue k="Gastos del viaje (tope)" v={euros(capCents / 100)} />
           </Card>
-          <Card>
-            <ToggleRow title="Solo acepto paquetes de usuarios verificados" subtitle="Quien te pida llevar un paquete tendrá que verificar su identidad con Stripe. Recomendado."
-              value={onlyVerified} onChange={setOnlyVerified} />
-          </Card>
+          <InfoBox icon="shield-checkmark-outline">Todos los senders verifican su identidad antes de enviar: sabrás siempre quién te confía el paquete.</InfoBox>
           <Checkbox checked={agree} onChange={setAgree}>
             <Muted>Revisaré cada paquete al recogerlo y no transportaré objetos prohibidos.</Muted>
           </Checkbox>

@@ -40,9 +40,8 @@ export default function Solicitar() {
 
   const declared = Number(value.replace(',', '.'));
   const valueOk = Number.isFinite(declared) && declared >= 1 && declared <= cfg.maxDeclaredValue;
-  // ¿Se le pedirá verificar su identidad? (si el carrier lo exige o si el valor es alto)
-  const needsIdentity = cfg.senderVerificationEnabled && !ver?.verified
-    && (!!t.requireVerifiedSender || (valueOk && declared > cfg.identityValueThreshold));
+  // Todos los senders verifican su identidad una vez, al contratar su primer envío
+  const needsIdentity = cfg.senderVerificationEnabled && !ver?.verified;
   const ok = recipientName.trim().length > 1 && phoneOk(recipientPhone) && (myPhone || phoneOk(myPhoneInput))
     && !!photoPath && valueOk && noProhibited;
   const pkg: NewPackage = {
@@ -89,8 +88,7 @@ export default function Solicitar() {
       </Card>
       {needsIdentity ? (
         <InfoBox icon="shield-checkmark-outline">
-          {t.requireVerifiedSender ? `${carrier?.name ?? 'Este carrier'} solo lleva paquetes de usuarios verificados.` : `Para envíos de más de ${cfg.identityValueThreshold} € pedimos verificar la identidad.`}
-          {' '}Te lo pediremos antes de pagar. Tarda 2 minutos y WannaSend nunca ve tu DNI.
+          Para oficializar tu primer envío verificarás tu identidad, una sola vez. Te lo pediremos antes de pagar: tarda 2 minutos y WannaSend nunca ve tu DNI.
         </InfoBox>
       ) : null}
       <Card>

@@ -55,7 +55,7 @@ export default function Verificar() {
       <Screen title="Verificar identidad" footer={<Button label="Continuar" onPress={() => router.back()} />}>
         <BigIcon name="shield-checkmark" />
         <H2 style={{ textAlign: 'center' }}>Identidad verificada</H2>
-        <Muted style={{ textAlign: 'center' }}>Ya puedes enviar paquetes a cualquier carrier. Tu perfil muestra la insignia de verificado.</Muted>
+        <Muted style={{ textAlign: 'center' }}>Ya puedes enviar y llevar paquetes. Tu perfil muestra la insignia de verificado.</Muted>
       </Screen>
     );
   }
@@ -95,7 +95,7 @@ export default function Verificar() {
       </Card>
       <Card>
         <H3>¿Por qué lo pedimos?</H3>
-        <Muted>Para que sepas con quién te cruzas: los carriers también están verificados, y muchos solo llevan paquetes de usuarios verificados.</Muted>
+        <Muted>Para que todo envío quede oficializado: senders y carriers están verificados, así cada uno sabe con quién trata.</Muted>
       </Card>
       <Small style={{ textAlign: 'center' }}>Al continuar aceptas que Stripe trate tu documento y tu selfie para verificar tu identidad, según su política de privacidad.</Small>
     </Screen>
