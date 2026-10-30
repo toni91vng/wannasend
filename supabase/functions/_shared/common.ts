@@ -66,6 +66,14 @@ export async function createCarrierAccount(uid: string, email?: string, prefill?
   return createCarrierAccountRaw(uid, email);
 }
 
+/**
+ * Perfil "de negocio" que Stripe pide a toda cuenta. El carrier es un particular, no una empresa:
+ * con una descripción de la actividad, Stripe deja de pedirle página web (comprobado el 30/10/2026).
+ */
+const CARRIER_PROFILE = {
+  product_description: 'Particular que comparte los gastos de sus viajes llevando paquetes de otros usuarios de la app WannaSend.',
+};
+
 function createCarrierAccountRaw(uid: string, email?: string, prefill?: Prefill) {
   return stripeV2<{ id: string }>('POST', '/v2/core/accounts', {
     contact_email: email,
@@ -73,10 +81,19 @@ function createCarrierAccountRaw(uid: string, email?: string, prefill?: Prefill)
     dashboard: 'express',
     identity: { country: 'es', entity_type: 'individual', ...(prefill ? { individual: prefill } : {}) },
     configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } },
-    defaults: { currency: 'eur', locales: ['es-ES'], responsibilities: { fees_collector: 'application', losses_collector: 'application' } },
+    defaults: { currency: 'eur', locales: ['es-ES'], responsibilities: { fees_collector: 'application', losses_collector: 'application' }, profile: CARRIER_PROFILE },
     include: ['configuration.recipient', 'requirements'],
     metadata: { user_id: uid },
-  }, `acct-v2-${uid}${prefill ? '-p' : ''}`);
+  }, `acct-v2b-${uid}${prefill ? '-p' : ''}`);
+}
+
+/** Cuentas creadas antes del 30/10/2026: se les añade el perfil para que el formulario no pida web. */
+async function ensureCarrierProfile(accountId: string) {
+  try {
+    await stripeV2('POST', `/v2/core/accounts/${accountId}`, { defaults: { profile: CARRIER_PROFILE } });
+  } catch (e) {
+    console.error('perfil no actualizado', accountId, e);
+  }
 }
 
 /** ¿Puede el carrier recibir transferencias ya? */
@@ -87,6 +104,7 @@ export async function carrierTransfersActive(accountId: string): Promise<boolean
 
 /** Enlace de un solo uso al formulario de alta de Stripe. */
 export async function carrierOnboardingLink(accountId: string, returnUrl: string): Promise<string> {
+  await ensureCarrierProfile(accountId);
   const l = await stripeV2<{ url: string }>('POST', '/v2/core/account_links', {
     account: accountId,
     use_case: {
