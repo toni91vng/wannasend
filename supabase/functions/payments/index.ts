@@ -10,6 +10,14 @@ import {
   verifiedPrefill,
 } from '../_shared/common.ts';
 
+/**
+ * Métodos de pago: Stripe ya no deja fijarlos con payment_method_types; se eligen con una
+ * "configuración de métodos de pago". La de modo prueba ("App WannaSend", creada el 30/10/2026) tiene
+ * tarjeta, Google Pay, Apple Pay y PayPal. En modo real hay que crear otra igual y ponerla en el secreto
+ * STRIPE_PAYMENT_METHOD_CONFIG (no es un dato secreto: solo identifica la configuración).
+ */
+const PMC = Deno.env.get('STRIPE_PAYMENT_METHOD_CONFIG') ?? 'pmc_1UWIVSDIBv4hBX6p1wNrmNlk';
+
 const RETURN_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/stripe-return`;
 
 Deno.serve(async (req) => {
@@ -53,16 +61,22 @@ Deno.serve(async (req) => {
 
       if (s.payment_intent_id) {
         const existing = await stripe.paymentIntents.retrieve(s.payment_intent_id);
-        if (existing.status !== 'canceled' && existing.status !== 'succeeded') return json({ clientSecret: existing.client_secret });
+        if (existing.status !== 'canceled' && existing.status !== 'succeeded') {
+          // Si cambió la configuración de métodos, se anula el pago pendiente y se crea otro con la nueva
+          const samePmc = (existing.payment_method_configuration_details?.id ?? undefined) === PMC;
+          if (!PMC || samePmc) return json({ clientSecret: existing.client_secret });
+          await stripe.paymentIntents.cancel(existing.id);
+        }
       }
       const pi = await stripe.paymentIntents.create({
         amount: s.total_cents,
         currency: 'eur',
         automatic_payment_methods: { enabled: true },
+        ...(PMC ? { payment_method_configuration: PMC } : {}),
         transfer_group: s.id,
         description: 'Envío WannaSend',
         metadata: { shipment_id: s.id, sender_id: uid },
-      }, { idempotencyKey: `pi-${s.id}-${s.payment_intent_id ?? 'new'}` });
+      }, { idempotencyKey: `pi3-${s.id}-${s.payment_intent_id ?? 'new'}-${PMC ?? 'panel'}` });
       await db.from('shipments').update({ payment_intent_id: pi.id }).eq('id', s.id);
       return json({ clientSecret: pi.client_secret });
     }
