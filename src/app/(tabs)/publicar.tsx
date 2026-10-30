@@ -3,8 +3,9 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { AddressField } from '@/components/AddressField';
+import { TimeField } from '@/components/TimeField';
 import {
-  Badge, Button, Card, Checkbox, Chips, DatePicker, Divider, Field, H3, InfoBox, KeyValue, Label, Muted, Row, Screen,
+  Badge, Button, Card, Checkbox, Chips, DatePicker, Divider, H3, InfoBox, KeyValue, Label, Muted, Row, Screen,
   Small, Stepper, Steps,
 } from '@/components/ui';
 import { publishTrip, routeDistance } from '@/data/api';
@@ -33,6 +34,8 @@ export default function Publicar() {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [departure, setDeparture] = useState('19:00');
   const [arrival, setArrival] = useState('20:50');
+  const [arrivalTouched, setArrivalTouched] = useState(false);
+  const [nextDay, setNextDay] = useState(false);
   const [maxSize, setMaxSize] = useState<PackageSize>('Mediano');
   const [capacity, setCapacity] = useState(3);
   const [maxWeightKg, setMaxWeight] = useState(10);
@@ -65,14 +68,27 @@ export default function Publicar() {
   useEffect(() => { if (maxPackages > 0 && capacity > maxPackages) setCapacity(maxPackages); }, [maxPackages]); // eslint-disable-line react-hooks/exhaustive-deps
   const needsPayouts = !!cfg?.carrierVerificationRequired && ver !== undefined && !ver.verified;
 
+  // Llegada propuesta: salida + tiempo estimado (unos 80 km/h de media, redondeado a 5 minutos)
+  const suggestArrival = (dep: string) => {
+    if (!isTime(dep) || !km) return;
+    const [h, m] = dep.split(':').map(Number);
+    const mins = Math.max(15, Math.round(((km / 80) * 60) / 5) * 5);
+    const total = h * 60 + m + mins;
+    setNextDay(total >= 24 * 60);
+    setArrival(`${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`);
+  };
+  const onDeparture = (v: string) => { setDeparture(v); if (!arrivalTouched) suggestArrival(v); };
+  useEffect(() => { if (!arrivalTouched) suggestArrival(departure); }, [km]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const departureAt = isTime(departure) ? at(date, departure) : null;
   let arrivalAt = isTime(arrival) ? at(date, arrival) : null;
-  if (departureAt && arrivalAt && arrivalAt <= departureAt) arrivalAt = new Date(arrivalAt.getTime() + 86400_000); // llega al día siguiente
+  if (arrivalAt && nextDay) arrivalAt = new Date(arrivalAt.getTime() + 86400_000);
+  const arrivalOk = !!departureAt && !!arrivalAt && arrivalAt > departureAt;
   const future = !!departureAt && departureAt.getTime() > Date.now() + 30 * 60_000;
 
   const can = [
     !!from && !!to && !!route && km >= 5 && !tooShort && !needsPayouts,
-    !!departureAt && !!arrivalAt && future,
+    !!departureAt && !!arrivalAt && arrivalOk && future,
     priceCents >= range.min && priceCents <= range.max && capacity >= 1 && capacity <= maxPackages,
     agree,
   ][step - 1];
@@ -120,11 +136,15 @@ export default function Publicar() {
 
       {step === 2 ? (
         <Card>
-          <Row gap={12}>
-            <Field style={{ flex: 1 }} label="Salida" icon="time-outline" value={departure} onChangeText={setDeparture} maxLength={5} placeholder="19:00" error={departure && !isTime(departure) ? 'Formato HH:MM' : ''} />
-            <Field style={{ flex: 1 }} label="Llegada aprox." icon="time-outline" value={arrival} onChangeText={setArrival} maxLength={5} placeholder="20:50" error={arrival && !isTime(arrival) ? 'Formato HH:MM' : ''} />
+          <Row gap={12} style={{ alignItems: 'flex-start' }}>
+            <TimeField style={{ flex: 1 }} label="Salida" value={departure} onChange={onDeparture} />
+            <TimeField style={{ flex: 1 }} label="Llegada aprox." value={arrival} onChange={(v) => { setArrival(v); setArrivalTouched(true); }} />
           </Row>
           {departureAt && !future ? <Small style={{ color: colors.danger }}>La salida debe ser al menos dentro de 30 minutos.</Small> : null}
+          {departureAt && arrivalAt && !arrivalOk ? <Small style={{ color: colors.danger }}>La llegada tiene que ser después de la salida.</Small> : null}
+          <Checkbox checked={nextDay} onChange={(v) => { setNextDay(v); setArrivalTouched(true); }}>
+            <Muted>Llego al día siguiente</Muted>
+          </Checkbox>
           <View><Label>Tamaño máximo que aceptas</Label><Chips options={SIZES} value={maxSize} onChange={setMaxSize} /></View>
           <Row style={{ justifyContent: 'space-between' }}><Muted>Peso máximo por paquete</Muted><Stepper value={maxWeightKg} onChange={setMaxWeight} min={1} max={30} format={(n) => `${n} kg`} /></Row>
         </Card>
@@ -164,7 +184,7 @@ export default function Publicar() {
           <Card>
             <Text style={{ fontFamily: fonts.semibold, fontSize: 18, color: colors.primaryDark }}>{longDate(date)}</Text>
             <KeyValue k={`${departure}  Salida`} v={from.label} />
-            <KeyValue k={`${arrival}  Llegada`} v={to.label} />
+            <KeyValue k={`${arrival}${nextDay ? ' (+1 día)' : ''}  Llegada`} v={to.label} />
             <Divider />
             <KeyValue k="Paquetes" v={`Hasta ${capacity}`} />
             <KeyValue k="Tamaño máximo" v={maxSize} />

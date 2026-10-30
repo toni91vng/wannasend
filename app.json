@@ -63,7 +63,8 @@
             "extraProguardRules": "# Stripe: push provisioning (tarjetas emitidas) no se usa y su librería no es pública\n-dontwarn com.stripe.android.pushProvisioning.**"
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "scheme": "wannasend",
     "experiments": {
