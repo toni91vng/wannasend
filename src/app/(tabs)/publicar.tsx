@@ -12,7 +12,7 @@ import { publishTrip, routeDistance } from '@/data/api';
 import { useAppConfig, useMyVerification } from '@/data/hooks';
 import { PackageSize, Place, SIZES } from '@/data/types';
 import { longDate } from '@/lib/format';
-import { breakdown, distanceKm, euros, rangeCents, suggestedCents } from '@/lib/pricing';
+import { distanceKm, euros, rangeCents, suggestedCents } from '@/lib/pricing';
 import { run } from '@/lib/run';
 import { colors, fonts } from '@/lib/theme';
 
@@ -168,14 +168,7 @@ export default function Publicar() {
             </Row>
             <Small>Con {euros(priceCents / 100)} por paquete caben hasta {maxPackages} paquete{maxPackages === 1 ? '' : 's'}{maxPackages === 6 ? ' (el máximo por trayecto)' : ''}.</Small>
           </Card>
-          <Card>
-            <H3>Lo que paga el sender</H3>
-            <KeyValue k="Tu aportación" v={euros(priceCents / 100)} />
-            <KeyValue k="Gastos de gestión e IVA" v={euros(breakdown(priceCents / 100).fees)} />
-            <Divider />
-            <KeyValue k="Total" v={euros(breakdown(priceCents / 100).total)} bold />
-            <InfoBox icon="wallet-outline">Con {capacity} paquete{capacity > 1 ? 's' : ''} recibirías hasta {euros((priceCents * capacity) / 100)} para cubrir gastos</InfoBox>
-          </Card>
+          <InfoBox icon="wallet-outline">Con {capacity} paquete{capacity > 1 ? 's' : ''} recibirías hasta {euros((priceCents * capacity) / 100)} para cubrir gastos. Recibes íntegro tu precio por paquete; la cuota de servicio de WannaSend la paga el sender aparte.</InfoBox>
         </>
       ) : null}
 

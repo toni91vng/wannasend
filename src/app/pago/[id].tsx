@@ -65,10 +65,10 @@ export default function Pago() {
       <Card>
         <H3>Detalle del precio</H3>
         <KeyValue k={`Aportación para ${carrier?.name ?? 'el carrier'}`} v={euros(t.pricePerPackage)} />
-        <KeyValue k="Gastos de gestión e IVA" v={euros(Math.round((t.total - t.pricePerPackage) * 100) / 100)} />
+        <KeyValue k="Cuota de servicio (IVA incluido)" v={euros(Math.round((t.total - t.pricePerPackage) * 100) / 100)} />
         <Divider />
         <KeyValue k="Precio total" v={euros(t.total)} bold accent />
-        <Small>Los gastos de gestión se destinan a mantener la plataforma y construir una comunidad segura.</Small>
+        <Small>La cuota de servicio mantiene WannaSend: pago seguro, verificación de identidad y ayuda si hay una incidencia. El carrier recibe íntegra su aportación.</Small>
       </Card>
       <Card>
         <H3>Tu paquete</H3>
