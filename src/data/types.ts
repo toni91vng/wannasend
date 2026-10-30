@@ -117,6 +117,7 @@ export interface Shipment {
 }
 
 export interface AppConfig {
+  betaFeedback: boolean; // ventana de opiniones (solo beta)
   paymentsEnabled: boolean;
   capPerKm: number; // €/km
   maxDeclaredValue: number; // €

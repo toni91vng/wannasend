@@ -1,4 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useRef } from 'react';
+import { askFeedback } from '@/components/FeedbackHost';
 import { Text, View } from 'react-native';
 import { TripCard } from '@/components/TripCard';
 import { Button, Chips, EmptyState, ErrorBox, H2, Loading, Muted, Screen } from '@/components/ui';
@@ -17,6 +19,15 @@ export default function Resultados() {
   const { data: nearby = [] } = useNearbyDays(from, to, !!list && list.length === 0);
   const otherDays = nearby.filter((d) => d.day !== date);
   const alertParams = { from: params.from, to: params.to, date };
+
+  // Opinión de la beta: si sigue mirando los resultados unos segundos (antes si no hay ninguno)
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+  const loaded = !!list;
+  const empty = list?.length === 0;
+  useEffect(() => {
+    if (loaded) askFeedback('buscar', { delayMs: empty ? 2500 : 8000, stillValid: () => mounted.current });
+  }, [loaded, empty]);
 
   return (
     <Screen title="Buscar carrier"

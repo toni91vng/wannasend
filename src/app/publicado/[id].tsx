@@ -1,4 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect } from 'react';
+import { askFeedback } from '@/components/FeedbackHost';
 import { BigIcon, Button, Loading, Muted, Screen } from '@/components/ui';
 import { useTrip } from '@/data/hooks';
 import { longDate } from '@/lib/format';
@@ -7,6 +9,7 @@ import { shareText } from '@/lib/notify';
 export default function Publicado() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: t } = useTrip(id);
+  useEffect(() => { askFeedback('publicar', { delayMs: 1500 }); }, []);
   if (!t) return <Screen title="¡Publicado!" back={false}><Loading /></Screen>;
   return (
     <Screen title="¡Publicado!" back={false}

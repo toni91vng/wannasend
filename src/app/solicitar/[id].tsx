@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Text } from 'react-native';
+import { askFeedback, sentRecently } from '@/components/FeedbackHost';
 import { PhotoPicker } from '@/components/Photos';
 import { Button, Card, Checkbox, Chips, Field, H3, InfoBox, Label, Loading, Muted, Row, Screen, Small, Stepper, Steps } from '@/components/ui';
 import { getMyPhone, NewPackage } from '@/data/api';
@@ -33,6 +34,8 @@ export default function Solicitar() {
   const [myPhoneInput, setMyPhoneInput] = useState('');
 
   useEffect(() => { getMyPhone(me).then(setMyPhone).catch(() => setMyPhone(null)); }, [me]);
+  // Si sale sin completar la solicitud, le preguntamos qué le ha frenado (solo beta, una vez)
+  useEffect(() => () => { askFeedback('abandonar_envio', { delayMs: 700, stillValid: () => !sentRecently() }); }, []);
 
   if (!t || !cfg) return <Screen title="Tu paquete"><Loading /></Screen>;
   const allowed = SIZES.slice(0, SIZES.indexOf(t.maxSize) + 1);

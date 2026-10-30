@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import { askFeedback, markShipmentSent } from '@/components/FeedbackHost';
 import { useState } from 'react';
 import { Button, Card, Divider, H3, InfoBox, KeyValue, Loading, Row, Screen, Small, Steps } from '@/components/ui';
 import { NewPackage, requestShipment, setMyPhone } from '@/data/api';
@@ -31,7 +32,12 @@ export default function Pago() {
   // Todos los senders verifican su identidad una vez, al contratar su primer envío
   const needsIdentity = cfg.senderVerificationEnabled && !ver?.verified;
 
-  const go = (sid: string) => { router.dismissAll(); router.push(`/envio/${sid}`); };
+  const go = (sid: string) => {
+    markShipmentSent();
+    router.dismissAll();
+    router.push(`/envio/${sid}`);
+    askFeedback('enviar', { delayMs: 2000 });
+  };
 
   const send = async () => {
     setBusy(true);

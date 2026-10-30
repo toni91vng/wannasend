@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { ProfileView } from '@/components/ProfileView';
 import { Card, Divider, ErrorBox, Loading, MenuRow, Screen } from '@/components/ui';
+import { askFeedback } from '@/components/FeedbackHost';
 import { useBalance, useMyProfile, useMyVerification } from '@/data/hooks';
 import { euros } from '@/lib/pricing';
 import { errorText } from '@/lib/supabase';
@@ -22,6 +23,7 @@ export default function Perfil() {
         <MenuRow icon="person-outline" label="Editar perfil" onPress={() => router.push('/editar-perfil')} />
         <Divider />
         <MenuRow icon="settings-outline" label="Ajustes" onPress={() => router.push('/ajustes')} />
+        <MenuRow icon="chatbubble-ellipses-outline" label="Enviar opinión (beta)" onPress={() => askFeedback('general', { always: true })} />
       </Card>
     </Screen>
   );

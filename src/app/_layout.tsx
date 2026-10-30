@@ -5,6 +5,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { FeedbackHost } from '@/components/FeedbackHost';
 import { NoticeHost } from '@/components/NoticeHost';
 import { PaymentsProvider } from '@/components/PaymentsProvider';
 import { AppProviders } from '@/data/session';
@@ -20,6 +21,7 @@ export default function RootLayout() {
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
           <NoticeHost />
+          <FeedbackHost />
         </PaymentsProvider>
       </AppProviders>
     </SafeAreaProvider>

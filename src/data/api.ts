@@ -394,9 +394,10 @@ export async function report(r: { reportedUserId?: string; shipmentId?: string; 
 
 export async function getAppConfig(): Promise<AppConfig> {
   const r = check(await supabase.from('app_config').select(
-    'payments_enabled, trip_cap_cents_per_km, max_declared_value_cents, identity_value_threshold_cents, prohibited_list_version, carrier_verification_required, sender_verification_enabled',
+    'payments_enabled, trip_cap_cents_per_km, max_declared_value_cents, identity_value_threshold_cents, prohibited_list_version, carrier_verification_required, sender_verification_enabled, beta_feedback_enabled',
   ).maybeSingle()) as any;
   return {
+    betaFeedback: r?.beta_feedback_enabled ?? false,
     paymentsEnabled: !!r?.payments_enabled,
     capPerKm: (r?.trip_cap_cents_per_km ?? 26) / 100,
     maxDeclaredValue: (r?.max_declared_value_cents ?? 30000) / 100,
@@ -413,4 +414,19 @@ export async function paymentsEnabled(): Promise<boolean> {
 export async function myVerification(): Promise<Verification> {
   const r = (check(await supabase.rpc('my_verification')) as any[])[0];
   return { identityStatus: r?.identity_status ?? 'sin_verificar', payoutsReady: !!r?.payouts_ready, verified: !!r?.verified };
+}
+
+/* ------------------------------------------------------------------ */
+/* Opiniones de la beta                                                */
+/* ------------------------------------------------------------------ */
+
+export type FeedbackContext = 'publicar' | 'enviar' | 'buscar' | 'abandonar_envio' | 'general';
+
+/** Momentos en los que ya se le preguntó (respondiera o no). */
+export async function askedFeedback(): Promise<FeedbackContext[]> {
+  const rows = check(await supabase.from('beta_feedback').select('context')) as { context: FeedbackContext }[];
+  return rows.map((r) => r.context);
+}
+export async function sendFeedback(context: FeedbackContext, rating: number | null, comment: string, appVersion?: string) {
+  check(await supabase.from('beta_feedback').insert({ context, rating, comment: comment.trim() || null, app_version: appVersion ?? null }));
 }
