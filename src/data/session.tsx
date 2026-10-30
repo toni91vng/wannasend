@@ -31,6 +31,10 @@ function RealtimeBridge({ userId }: { userId: string }) {
         qc.invalidateQueries({ queryKey: ['conversations'] });
         qc.invalidateQueries({ queryKey: ['messages', (p.new as { conversation_id: string }).conversation_id] });
       })
+      // El otro ha leído mis mensajes: actualiza el doble tick
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (p) => {
+        qc.invalidateQueries({ queryKey: ['messages', (p.new as { conversation_id: string }).conversation_id] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [userId, qc]);
