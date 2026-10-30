@@ -40,7 +40,7 @@ export const STATUS: Record<ShipmentStatus, { label: string; tone: 'green' | 'am
   aceptado: { label: 'Aceptado', tone: 'green' },
   recogido: { label: 'Recogido', tone: 'green' },
   en_camino: { label: 'En camino', tone: 'green' },
-  entregado: { label: 'Entregado', tone: 'gray' },
+  entregado: { label: 'Entregado', tone: 'green' },
   rechazado: { label: 'Rechazado', tone: 'red' },
   cancelado: { label: 'Cancelado', tone: 'red' },
   caducado: { label: 'Caducado', tone: 'red' },

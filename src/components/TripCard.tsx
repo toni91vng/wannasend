@@ -11,7 +11,7 @@ import { Avatar, Badge, Body, Card, H3, Rating, Row, Small } from './ui';
 export function Timeline({ trip, showPoints }: { trip: Trip; showPoints?: boolean }) {
   const stop = (time: string, city: string, point: string) => (
     <Row gap={10} style={{ alignItems: 'flex-start' }}>
-      <Body style={{ width: 46, color: colors.textSecondary }}>{time}</Body>
+      <Body numberOfLines={1} style={{ width: 52, color: colors.textSecondary, fontVariant: ['tabular-nums'] }}>{time}</Body>
       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginTop: 6 }} />
       <View style={{ flex: 1 }}>
         <H3>{city}</H3>
@@ -23,7 +23,7 @@ export function Timeline({ trip, showPoints }: { trip: Trip; showPoints?: boolea
     <View style={{ gap: 2 }}>
       {stop(trip.departure, trip.from, trip.fromPoint)}
       <Row gap={10}>
-        <Small style={{ width: 46, fontSize: 10, textAlign: 'center' }}>{duration(trip)}</Small>
+        <Small style={{ width: 52, fontSize: 10, textAlign: 'center' }}>{duration(trip)}</Small>
         <View style={{ width: 2, height: 16, backgroundColor: colors.primaryLight, marginLeft: 3 }} />
       </Row>
       {stop(trip.arrival, trip.to, trip.toPoint)}

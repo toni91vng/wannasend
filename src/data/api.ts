@@ -131,13 +131,15 @@ export async function resetPassword(email: string) {
 }
 
 export async function getProfile(id: string): Promise<User | null> {
-  const rows = check(await supabase.rpc('get_profile', { p_user: id })) as any[];
+  const rows = check(await supabase.rpc('get_profile_v2', { p_user: id })) as any[];
   const p = rows?.[0];
   if (!p) return null;
   return {
     id: p.id, name: p.name, bio: p.bio, verified: p.verified,
     rating: Number(p.rating), reviews: p.reviews_count, trips: p.trips_done,
     packages: p.packages_sent, carried: p.packages_carried, level: p.level,
+    asCarrier: { rating: Number(p.rating_as_carrier ?? 0), reviews: p.reviews_as_carrier ?? 0 },
+    asSender: { rating: Number(p.rating_as_sender ?? 0), reviews: p.reviews_as_sender ?? 0 },
   };
 }
 export async function updateProfile(id: string, patch: { name?: string; bio?: string }) {
@@ -156,7 +158,7 @@ export async function getReviews(aboutId: string): Promise<Review[]> {
     .select('id, role, stars, text, created_at, author:profiles!reviews_author_id_fkey(name)')
     .eq('about_id', aboutId).order('created_at', { ascending: false }).limit(50)) as any[];
   return rows.map((r) => ({
-    id: r.id, authorName: r.author?.name ?? 'Usuario', role: r.role === 'sender' ? 'Sender' : 'Carrier', stars: r.stars, text: r.text,
+    id: r.id, authorName: r.author?.name ?? 'Usuario', role: r.role === 'sender' ? 'Sender' : 'Carrier', /* papel de quien escribe */ stars: r.stars, text: r.text,
     date: new Date(r.created_at).toLocaleDateString('es-ES', { month: 'short', year: 'numeric' }),
   }));
 }
@@ -225,12 +227,13 @@ export async function cancelTrip(id: string) {
   check(await supabase.from('trips').update({ status: 'cancelado' }).eq('id', id));
 }
 
-export async function myTrips(userId: string): Promise<(Trip & { pending: number })[]> {
+export async function myTrips(userId: string): Promise<(Trip & { pending: number; statuses: ShipmentStatus[] })[]> {
   const rows = check(await supabase.from('trips').select(`${TRIP_COLS}, shipments(status)`)
     .eq('carrier_id', userId).order('departure_at', { ascending: false }).limit(50)) as any[];
   return rows.map((r) => ({
     ...toTrip({ ...r, booked: r.shipments.filter((s: any) => ['aceptado', 'recogido', 'en_camino', 'entregado'].includes(s.status)).length }),
     pending: r.shipments.filter((s: any) => s.status === 'solicitado').length,
+    statuses: r.shipments.map((s: any) => s.status),
   }));
 }
 
@@ -303,8 +306,11 @@ export async function tripShipments(tripId: string): Promise<Shipment[]> {
 export const respondShipment = async (id: string, accept: boolean) => { check(await supabase.rpc('respond_shipment', { p_shipment: id, p_accept: accept })); };
 export const cancelShipment = async (id: string) => { check(await supabase.rpc('cancel_shipment', { p_shipment: id })); };
 /** Revisión en la recogida: coincide (foto) o no coincide (foto + motivo → rechazo y reembolso). */
-export const pickupShipment = async (id: string, ok: boolean, photoPath: string, reason?: string) =>
-  check(await supabase.rpc('pickup_shipment', { p_shipment: id, p_ok: ok, p_photo_path: photoPath, p_reason: reason ?? null })) as ShipmentStatus;
+/** Recogida con el código del sender. 'incorrecto' y 'bloqueado' no cambian el estado. */
+export const pickupShipment = async (id: string, ok: boolean, photoPath: string, code?: string, reason?: string) =>
+  check(await supabase.rpc('pickup_shipment_v2', { p_shipment: id, p_ok: ok, p_photo_path: photoPath, p_code: code ?? null, p_reason: reason ?? null })) as
+    'recogido' | 'en_camino' | 'rechazado' | 'incorrecto' | 'bloqueado';
+export const getPickupCode = async (id: string) => check(await supabase.rpc('get_pickup_code', { p_shipment: id })) as string | null;
 export const confirmDelivery = async (id: string, code: string) =>
   check(await supabase.rpc('confirm_delivery', { p_shipment: id, p_code: code })) as 'ok' | 'incorrecto' | 'bloqueado';
 export const getDeliveryCode = async (id: string) => check(await supabase.rpc('get_delivery_code', { p_shipment: id })) as string | null;

@@ -7,7 +7,7 @@ import { PackagePhoto, VerifiedBadge } from '@/components/Photos';
 import { Timeline } from '@/components/TripCard';
 import { Avatar, Badge, Button, Card, ErrorBox, H3, InfoBox, KeyValue, Loading, Muted, Row, Screen, Small } from '@/components/ui';
 import { cancelTrip, openConversation, respondShipment, startTrip } from '@/data/api';
-import { useTrip, useTripShipments } from '@/data/hooks';
+import { useHasReviewed, useTrip, useTripShipments } from '@/data/hooks';
 import { Shipment } from '@/data/types';
 import { isUpcoming, longDate, STATUS, timeAgo } from '@/lib/format';
 import { notify } from '@/lib/notify';
@@ -38,8 +38,13 @@ export default function MiTrayecto() {
   const fitsCap = (s: Shipment) => capLeft === null || capLeft === undefined || s.carrierAmount <= capLeft + 0.001;
   const onBoard = list.filter((s) => ['recogido', 'en_camino'].includes(s.status)).length;
   const pendingPickup = list.filter((s) => s.status === 'aceptado').length;
-  const canStart = t.status === 'publicado' && !t.startedAt && onBoard + pendingPickup > 0
-    && new Date(t.departureAt).getTime() - Date.now() < 12 * 3600_000;
+  // "Empiezo el trayecto": la tarjeta se ve siempre que haya paquetes; el botón se activa 3 h antes de la salida
+  const showStart = t.status === 'publicado' && !t.startedAt && onBoard + pendingPickup > 0;
+  const startFrom = new Date(new Date(t.departureAt).getTime() - 3 * 3600_000);
+  const canStart = showStart && Date.now() >= startFrom.getTime();
+  const startFromText = `${startFrom.toDateString() === new Date().toDateString() ? 'hoy' : longDate(startFrom.toISOString().slice(0, 10))} a las ${startFrom.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
+  // Ya no se puede cancelar si algún paquete está en manos del carrier o entregado
+  const canCancel = !t.startedAt && !list.some((s) => ['recogido', 'en_camino', 'entregado'].includes(s.status));
   const startedAt = t.startedAt ? new Date(t.startedAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : null;
 
   const refresh = () => {
@@ -88,11 +93,14 @@ export default function MiTrayecto() {
         {t.status === 'cancelado' ? <Badge label="Trayecto cancelado" tone="red" /> : null}
       </Card>
 
-      {canStart ? (
+      {showStart ? (
         <Card>
-          <H3>¿Ya sales?</H3>
-          <Muted>{pendingPickup ? `Te ${pendingPickup === 1 ? 'falta 1 paquete' : `faltan ${pendingPickup} paquetes`} por recoger. ` : ''}Cuando arranques, avisa a tus senders de que su paquete va de camino.</Muted>
-          <Button label="Empiezo el trayecto" icon="car-outline" loading={busyId === 'start'} onPress={start} />
+          <H3>{canStart ? '¿Ya sales?' : 'Marcar «En camino»'}</H3>
+          <Muted>
+            {pendingPickup ? `Te ${pendingPickup === 1 ? 'falta 1 paquete' : `faltan ${pendingPickup} paquetes`} por recoger. ` : ''}
+            {canStart ? 'Cuando arranques, avisa a tus senders de que su paquete va de camino.' : `Podrás marcarlo a partir de ${startFromText}, 3 horas antes de la salida.`}
+          </Muted>
+          <Button label="Empiezo el trayecto" icon="car-outline" loading={busyId === 'start'} disabled={!canStart} onPress={start} />
         </Card>
       ) : null}
 
@@ -136,11 +144,12 @@ export default function MiTrayecto() {
           {s.status === 'aceptado' ? <Button small label="Recoger paquete" icon="cube-outline" onPress={() => router.push(`/recogida/${s.id}`)} /> : null}
           {s.status === 'recogido' || s.status === 'en_camino' ? <Button small label="Confirmar entrega" icon="checkmark-done-outline" onPress={() => router.push(`/entrega/${s.id}`)} /> : null}
           {s.status === 'entregado' ? <Text style={{ fontFamily: fonts.medium, color: colors.primaryDark }}>Entregado{s.deliveredAt ? ` a las ${s.deliveredAt}` : ''} · +{euros(s.carrierAmount)}</Text> : null}
+          {s.status === 'entregado' ? <RateSender shipmentId={s.id} name={s.senderName ?? 'el sender'} /> : null}
           {s.status !== 'entregado' ? <Button small variant="ghost" label={`Escribir a ${s.senderName}`} onPress={() => chat(s.senderId)} /> : null}
         </Card>
       )) : <Muted>Cuando aceptes una solicitud, el paquete aparecerá aquí.</Muted>}
 
-      {t.status === 'publicado' && isUpcoming(t.departureAt) && onBoard === 0 ? (
+      {t.status === 'publicado' && isUpcoming(t.departureAt) && canCancel ? (
         confirmCancel ? (
           <Card>
             <H3>¿Cancelar este trayecto?</H3>
@@ -154,4 +163,13 @@ export default function MiTrayecto() {
       ) : null}
     </Screen>
   );
+}
+
+/** El carrier también valora al sender (una vez por envío entregado). */
+function RateSender({ shipmentId, name }: { shipmentId: string; name: string }) {
+  const { data: reviewed, isLoading } = useHasReviewed(shipmentId);
+  if (isLoading) return null;
+  return reviewed
+    ? <Small style={{ color: colors.primaryDark }}>Ya has valorado a {name}</Small>
+    : <Button small variant="secondary" label={`Valorar a ${name}`} icon="star-outline" onPress={() => router.push(`/valorar/${shipmentId}`)} />;
 }

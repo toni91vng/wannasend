@@ -33,6 +33,8 @@ export interface User {
   carried: number;
   verified: boolean;
   level: Level;
+  asCarrier: { rating: number; reviews: number }; // lo que opinan sus senders
+  asSender: { rating: number; reviews: number }; // lo que opinan sus carriers
 }
 
 export interface Review {

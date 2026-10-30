@@ -31,9 +31,7 @@ export default function Trayectos() {
 
       {tab === 'Mis trayectos' && trips.data ? (
         trips.data.length ? trips.data.map((t) => {
-          const status = t.status === 'cancelado' ? { label: 'Cancelado', tone: 'red' as const }
-            : t.pending ? { label: `${t.pending} solicitud${t.pending > 1 ? 'es' : ''}`, tone: 'amber' as const }
-            : isUpcoming(t.departureAt) ? { label: 'Publicado', tone: 'green' as const } : { label: 'Finalizado', tone: 'gray' as const };
+          const status = tripStatus(t);
           return <TripCard key={t.id} trip={t} status={status} priceMode="carrier" showDate onPress={() => router.push(`/mi-trayecto/${t.id}`)} />;
         }) : (
           <EmptyState icon="car-outline" title="Aún no has publicado trayectos" text="Publica un desplazamiento que vayas a hacer y comparte gastos llevando paquetes.">
@@ -45,4 +43,17 @@ export default function Trayectos() {
       <Button variant="ghost" small label="Actualizar" icon="refresh" onPress={() => q.refetch()} />
     </Screen>
   );
+}
+
+/** Estado del trayecto según cómo van sus paquetes (lo más urgente primero). */
+function tripStatus(t: { status: string; pending: number; statuses: string[]; startedAt?: string | null; departureAt: string }) {
+  const has = (st: string) => t.statuses.includes(st);
+  const n = (st: string) => t.statuses.filter((x) => x === st).length;
+  if (t.status === 'cancelado') return { label: 'Cancelado', tone: 'red' as const };
+  if (t.pending) return { label: `${t.pending} solicitud${t.pending > 1 ? 'es' : ''}`, tone: 'amber' as const };
+  if (has('en_camino') || (t.startedAt && has('recogido'))) return { label: 'En camino', tone: 'green' as const };
+  if (has('aceptado')) return { label: n('aceptado') > 1 ? `${n('aceptado')} por recoger` : 'Por recoger', tone: 'amber' as const };
+  if (has('recogido')) return { label: 'Recogido', tone: 'green' as const };
+  if (has('entregado')) return { label: n('entregado') > 1 ? `${n('entregado')} entregados` : 'Entregado', tone: 'green' as const };
+  return isUpcoming(t.departureAt) ? { label: 'Publicado', tone: 'green' as const } : { label: 'Finalizado', tone: 'gray' as const };
 }

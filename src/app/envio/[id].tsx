@@ -8,7 +8,8 @@ import {
   Avatar, Badge, BigIcon, Body, Button, Card, Divider, ErrorBox, H2, H3, InfoBox, KeyValue, Loading, Muted, Rating, Row, Screen, Small,
 } from '@/components/ui';
 import { cancelShipment, openConversation } from '@/data/api';
-import { useDeliveryCode, useHasReviewed, useProfile, useShipment } from '@/data/hooks';
+import { useDeliveryCode, useHasReviewed, usePickupCode, useProfile, useShipment } from '@/data/hooks';
+import QRCode from 'react-native-qrcode-svg';
 import { Shipment } from '@/data/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { longDate, STATUS, timeAgo } from '@/lib/format';
@@ -38,6 +39,7 @@ export default function Envio() {
   const { data: c } = useProfile(t?.carrierId);
   const active = !!sh && ['aceptado', 'recogido', 'en_camino'].includes(sh.status);
   const { data: code } = useDeliveryCode(id, active);
+  const { data: pickupCode } = usePickupCode(id, sh?.status === 'aceptado');
   const { data: reviewed } = useHasReviewed(id, sh?.status === 'entregado');
   const [busy, setBusy] = useState(false);
 
@@ -143,6 +145,18 @@ export default function Envio() {
         <Card>
           <H3>Foto al recogerlo</H3>
           <PackagePhoto path={sh.pickupPhotoPath} />
+        </Card>
+      ) : null}
+
+      {sh.status === 'aceptado' ? (
+        <Card style={{ alignItems: 'center' }}>
+          <H3>Código de recogida</H3>
+          <Muted style={{ textAlign: 'center' }}>Cuando {name} recoja el paquete, enséñale este QR o dile el código. Así queda confirmado que se lo has dado.</Muted>
+          {pickupCode ? <QRCode value={`wannasend:recogida:${sh.id}:${pickupCode}`} size={160} color={colors.text} backgroundColor={colors.white} /> : null}
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 34, letterSpacing: 10, color: colors.text }}>{pickupCode ?? '····'}</Text>
+          <Button variant="secondary" label="Compartir código" icon="share-social-outline" disabled={!pickupCode} style={{ alignSelf: 'stretch' }}
+            onPress={() => pickupCode && shareText(`Código de recogida de WannaSend para ${name}: ${pickupCode}`)} />
+          <Small style={{ textAlign: 'center' }}>Si no se lo das tú en persona, compártelo con quien le entregue el paquete.</Small>
         </Card>
       ) : null}
 

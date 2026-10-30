@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { PackagePhoto, PhotoPicker, VerifiedBadge } from '@/components/Photos';
+import { QrScanner } from '@/components/QrScanner';
 import { Avatar, Button, Card, Divider, ErrorBox, Field, H3, InfoBox, KeyValue, Loading, Muted, Row, Screen, Small } from '@/components/ui';
 import { pickupShipment } from '@/data/api';
 import { useShipment } from '@/data/hooks';
@@ -24,6 +25,9 @@ export default function Recogida() {
   const [mismatch, setMismatch] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState('');
+  const [scanning, setScanning] = useState(false);
 
   if (isLoading) return <Screen title="Recoger paquete"><Loading /></Screen>;
   if (error || !sh) return <Screen title="Recoger paquete"><ErrorBox text={error ? errorText(error) : 'Envío no encontrado'} /></Screen>;
@@ -38,9 +42,11 @@ export default function Recogida() {
   const done = async (ok: boolean) => {
     if (!photo) return;
     setBusy(true);
-    const st = await run(() => pickupShipment(sh.id, ok, photo, ok ? undefined : reason.trim()), 'No se ha podido guardar');
+    const st = await run(() => pickupShipment(sh.id, ok, photo, ok ? code : undefined, ok ? undefined : reason.trim()), 'No se ha podido guardar');
     setBusy(false);
     if (!st) return;
+    if (st === 'incorrecto') { setCodeError('Código incorrecto. Revísalo con el sender.'); return; }
+    if (st === 'bloqueado') { setCodeError('Demasiados intentos. Espera 15 minutos y vuelve a probar.'); return; }
     qc.invalidateQueries({ queryKey: ['tripShipments'] });
     qc.invalidateQueries({ queryKey: ['shipment', id] });
     qc.invalidateQueries({ queryKey: ['trip'] });
@@ -58,7 +64,7 @@ export default function Recogida() {
         </Row>
       ) : (
         <View style={{ gap: 8 }}>
-          <Button label="Coincide, lo recojo" icon="checkmark" loading={busy} disabled={!photo} onPress={() => done(true)} />
+          <Button label="Confirmar recogida" icon="checkmark" loading={busy} disabled={!photo || code.length !== 4} onPress={() => done(true)} />
           <Button variant="ghost" label="No coincide con lo declarado" color={colors.danger} disabled={!photo} onPress={() => setMismatch(true)} />
         </View>
       )}
@@ -85,6 +91,24 @@ export default function Recogida() {
         <H3>2. Haz una foto</H3>
         <PhotoPicker value={photo} onChange={setPhoto} label="Foto del paquete al recogerlo" hint="Queda como prueba para ti si hay cualquier incidencia." />
       </Card>
+
+      {!mismatch ? (
+        <Card>
+          <H3>3. Código de recogida</H3>
+          <Muted>Escanea el QR que {sh.senderName ?? 'el sender'} ve en su app o escribe su código de 4 cifras. Confirma que te ha dado el paquete.</Muted>
+          <Button variant="secondary" label="Escanear QR" icon="qr-code-outline" onPress={() => setScanning(true)} />
+          <Field placeholder="0000" value={code} keyboardType="number-pad" maxLength={4} error={codeError}
+            onChangeText={(v) => { setCode(v.replace(/\D/g, '')); setCodeError(''); }}
+            style={{ fontSize: 24, letterSpacing: 8, textAlign: 'center' }} />
+        </Card>
+      ) : null}
+      <QrScanner visible={scanning} onClose={() => setScanning(false)} onScan={(data) => {
+        setScanning(false);
+        const m = /^wannasend:recogida:([0-9a-f-]+):(\d{4})$/.exec(data);
+        if (!m) { setCodeError('Ese QR no es un código de recogida de WannaSend.'); return; }
+        if (m[1] !== sh.id) { setCodeError('Ese QR es de otro paquete.'); return; }
+        setCode(m[2]); setCodeError('');
+      }} />
 
       {mismatch ? (
         <Card>

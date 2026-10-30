@@ -36,6 +36,8 @@ export const useTripShipments = (tripId?: string) =>
   useQuery({ queryKey: ['tripShipments', tripId], queryFn: () => api.tripShipments(tripId!), enabled: !!tripId });
 export const useDeliveryCode = (id?: string, enabled = true) =>
   useQuery({ queryKey: ['code', id], queryFn: () => api.getDeliveryCode(id!), enabled: !!id && enabled });
+export const usePickupCode = (id?: string, enabled = true) =>
+  useQuery({ queryKey: ['pickupCode', id], queryFn: () => api.getPickupCode(id!), enabled: !!id && enabled });
 export const useHasReviewed = (shipmentId?: string, enabled = true) => {
   const me = useMe();
   return useQuery({ queryKey: ['reviewed', shipmentId, me], queryFn: () => api.hasReviewed(shipmentId!, me), enabled: !!shipmentId && enabled });
