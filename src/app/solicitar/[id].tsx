@@ -5,13 +5,12 @@ import { Text } from 'react-native';
 import { askFeedback, sentRecently } from '@/components/FeedbackHost';
 import { PhotoPicker } from '@/components/Photos';
 import { Button, Card, Checkbox, Chips, Field, H3, InfoBox, Label, Loading, Muted, Row, Screen, Small, Stepper, Steps } from '@/components/ui';
-import { getMyPhone, NewPackage } from '@/data/api';
+import { NewPackage } from '@/data/api';
 import { useAppConfig, useMyVerification, useProfile, useTrip } from '@/data/hooks';
 import { colors, fonts } from '@/lib/theme';
 import { useMe } from '@/data/session';
-import { CONTENT_TYPES, PackageSize, SIZE_HINT, SIZES } from '@/data/types';
+import { CONTENT_TYPES, PackageSize, SIZE_HINT, SIZES, VALUE_TIERS, ValueTier } from '@/data/types';
 
-const phoneOk = (p: string) => /^\+?[0-9 ]{9,16}$/.test(p.trim());
 
 /** Paso 1: datos del paquete (con foto, valor declarado y declaración de no prohibidos) y del destinatario. */
 export default function Solicitar() {
@@ -22,18 +21,16 @@ export default function Solicitar() {
   const { data: carrier } = useProfile(t?.carrierId);
   const { data: ver } = useMyVerification();
   const [photoPath, setPhotoPath] = useState<string>();
-  const [value, setValue] = useState('');
+  const [valueTier, setValueTier] = useState<ValueTier>();
   const [noProhibited, setNoProhibited] = useState(false);
   const [size, setSize] = useState<PackageSize>('Pequeño');
   const [weight, setWeight] = useState(2);
   const [content, setContent] = useState<string>('Ropa');
   const [description, setDescription] = useState('');
   const [recipientName, setRecipientName] = useState('');
-  const [recipientPhone, setRecipientPhone] = useState('');
-  const [myPhone, setMyPhone] = useState<string | null | undefined>(undefined);
-  const [myPhoneInput, setMyPhoneInput] = useState('');
+  const [forMe, setForMe] = useState(false);
+  const { data: myProfile } = useProfile(me);
 
-  useEffect(() => { getMyPhone(me).then(setMyPhone).catch(() => setMyPhone(null)); }, [me]);
   // Si sale sin completar la solicitud, le preguntamos qué le ha frenado (solo beta, una vez)
   useEffect(() => () => { askFeedback('abandonar_envio', { delayMs: 700, stillValid: () => !sentRecently() }); }, []);
 
@@ -41,22 +38,20 @@ export default function Solicitar() {
   const allowed = SIZES.slice(0, SIZES.indexOf(t.maxSize) + 1);
   const sizeOk = allowed.includes(size) ? size : allowed[allowed.length - 1];
 
-  const declared = Number(value.replace(',', '.'));
-  const valueOk = Number.isFinite(declared) && declared >= 1 && declared <= cfg.maxDeclaredValue;
+  const tiers = VALUE_TIERS.filter((v) => v.max <= cfg.maxDeclaredValue);
+  const receiver = forMe ? (myProfile?.name ?? '') : recipientName.trim();
   // Todos los senders verifican su identidad una vez, al contratar su primer envío
   const needsIdentity = cfg.senderVerificationEnabled && !ver?.verified;
-  const ok = recipientName.trim().length > 1 && phoneOk(recipientPhone) && (myPhone || phoneOk(myPhoneInput))
-    && !!photoPath && valueOk && noProhibited;
+  const ok = receiver.length > 1 && !!photoPath && !!valueTier && noProhibited;
   const pkg: NewPackage = {
     size: sizeOk, weightKg: Math.min(weight, t.maxWeightKg), content, description: description.trim(),
-    recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim(),
-    declaredValue: valueOk ? Math.round(declared * 100) / 100 : 0, photoPath: photoPath ?? '', noProhibited,
+    recipientName: receiver, valueTier: valueTier ?? 'hasta_50', photoPath: photoPath ?? '', noProhibited,
   };
 
   return (
     <Screen title="Tu paquete" subtitle={`${t.from} → ${t.to} · ${t.departure}`}
       footer={<Button label="Continuar" disabled={!ok}
-        onPress={() => router.push({ pathname: '/pago/[id]', params: { id: t.id, pkg: JSON.stringify(pkg), myPhone: myPhone ? '' : myPhoneInput.trim() } })} />}
+        onPress={() => router.push({ pathname: '/pago/[id]', params: { id: t.id, pkg: JSON.stringify(pkg) } })} />}
     >
       <Steps step={1} of={2} />
       <Card>
@@ -77,10 +72,12 @@ export default function Solicitar() {
         <Field label="Descripción (opcional)" placeholder="Ej.: ropa y dos libros" value={description} onChangeText={setDescription} maxLength={200} />
         <PhotoPicker value={photoPath} onChange={setPhotoPath} label="Foto del contenido (obligatoria)"
           hint="Haz la foto con el paquete abierto. El carrier la verá antes de aceptar y la comparará al recogerlo." />
-        <Field label={`Valor aproximado del contenido (máx. ${cfg.maxDeclaredValue} €)`} icon="pricetag-outline" placeholder="Ej.: 40" value={value}
-          onChangeText={(v) => setValue(v.replace(/[^0-9.,]/g, '').slice(0, 7))} keyboardType="decimal-pad"
-          error={value && !valueOk ? (declared > cfg.maxDeclaredValue ? `No se pueden enviar objetos de más de ${cfg.maxDeclaredValue} €` : 'Indica un valor en euros') : ''} />
-        <Small>WannaSend no asegura el contenido: si algo sale mal, te devolvemos el precio del envío.</Small>
+        <View>
+          <Label>Valor aproximado del contenido</Label>
+          <Chips options={tiers.map((v) => v.label)} value={tiers.find((v) => v.id === valueTier)?.label ?? ''}
+            onChange={(l) => setValueTier(tiers.find((v) => v.label === l)?.id)} />
+          <Small style={{ marginTop: 6 }}>Solo lo ve WannaSend, para gestionar incidencias. El carrier no lo ve. No se pueden enviar objetos de más de {cfg.maxDeclaredValue} €.</Small>
+        </View>
         <Checkbox checked={noProhibited} onChange={setNoProhibited}>
           <Muted>
             Confirmo que el paquete no contiene{' '}
@@ -95,18 +92,13 @@ export default function Solicitar() {
         </InfoBox>
       ) : null}
       <Card>
-        <H3>¿Quién lo recibe?</H3>
-        <Field label="Nombre del destinatario" icon="person-outline" placeholder="Nombre" value={recipientName} onChangeText={setRecipientName} maxLength={60} />
-        <Field label="Móvil del destinatario" icon="call-outline" placeholder="600 000 000" value={recipientPhone} onChangeText={setRecipientPhone} keyboardType="phone-pad" maxLength={16} />
-        <Small>Le enviarás un enlace con su código de entrega por WhatsApp. El carrier solo verá este número si acepta tu paquete.</Small>
+        <H3>¿A quién se lo entrega el carrier?</H3>
+        <Checkbox checked={forMe} onChange={setForMe}><Muted>Lo recojo yo</Muted></Checkbox>
+        {forMe ? null : (
+          <Field label="Nombre de quien lo recoge" icon="person-outline" placeholder="Nombre" value={recipientName} onChangeText={setRecipientName} maxLength={60} />
+        )}
+        <Small>{forMe ? 'Cuando lo recibas, dale al carrier tu código de entrega.' : 'El carrier verá este nombre. Comparte con esa persona el código de entrega: se lo dará al carrier al recibir el paquete.'}</Small>
       </Card>
-      {myPhone === null ? (
-        <Card>
-          <H3>Tu móvil</H3>
-          <Field placeholder="600 000 000" icon="call-outline" value={myPhoneInput} onChangeText={setMyPhoneInput} keyboardType="phone-pad" maxLength={16} />
-          <Small>Lo pedimos una vez, antes de tu primer envío. No se muestra a nadie.</Small>
-        </Card>
-      ) : null}
     </Screen>
   );
 }

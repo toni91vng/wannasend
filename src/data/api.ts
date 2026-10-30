@@ -3,7 +3,7 @@ import { SaveFormat, ImageManipulator } from 'expo-image-manipulator';
 import { supabase } from '@/lib/supabase';
 import {
   Alert, AppConfig, ConversationSummary, DbSize, fromDbSize, Message, Movement, PackageSize, Place, Review, Shipment,
-  ShipmentStatus, toDbSize, Trip, TripStatus, User, Verification,
+  ShipmentStatus, toDbSize, Trip, TripStatus, User, VALUE_TIERS, ValueTier, Verification,
 } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -66,9 +66,10 @@ type ShipmentRow = {
   recipient_name: string; status: ShipmentStatus; requested_at: string; picked_up_at: string | null; delivered_at: string | null;
   carrier_amount_cents: number; total_cents: number;
   paid_at?: string | null; refunded_at?: string | null; transferred_at?: string | null;
-  declared_value_cents: number; photo_path?: string; pickup_photo_path?: string | null;
+  photo_path?: string; pickup_photo_path?: string | null;
+  value?: { tier: ValueTier; exact_cents: number | null } | null; // solo lo recibe el sender (RLS)
   rejection_stage?: 'solicitud' | 'recogida' | null; rejection_reason?: string | null;
-  trip?: TripRow | null; sender?: { name: string; verified?: boolean } | null; contact?: { recipient_phone: string } | null;
+  trip?: TripRow | null; sender?: { name: string; verified?: boolean } | null;
 };
 
 function toShipment(r: ShipmentRow): Shipment {
@@ -83,7 +84,6 @@ function toShipment(r: ShipmentRow): Shipment {
     content: r.content,
     description: r.description,
     recipientName: r.recipient_name,
-    recipientPhone: r.contact?.recipient_phone,
     status: r.status,
     requestedAt: new Date(r.requested_at).getTime(),
     pickedUpAt: hhmm(r.picked_up_at),
@@ -93,7 +93,7 @@ function toShipment(r: ShipmentRow): Shipment {
     paid: !!r.paid_at,
     refunded: !!r.refunded_at,
     transferred: !!r.transferred_at,
-    declaredValue: euros(r.declared_value_cents ?? 0),
+    valueLabel: r.value ? (r.value.exact_cents ? `${euros(r.value.exact_cents).toFixed(2).replace('.', ',')} €` : VALUE_TIERS.find((v) => v.id === r.value!.tier)?.label) : undefined,
     photoPath: r.photo_path,
     pickupPhotoPath: r.pickup_photo_path,
     rejectionStage: r.rejection_stage,
@@ -102,7 +102,7 @@ function toShipment(r: ShipmentRow): Shipment {
   };
 }
 
-const SHIPMENT_COLS = 'id, trip_id, sender_id, size, weight_kg, content, description, recipient_name, status, requested_at, picked_up_at, delivered_at, carrier_amount_cents, total_cents, paid_at, refunded_at, transferred_at, declared_value_cents, photo_path, pickup_photo_path, rejection_stage, rejection_reason';
+const SHIPMENT_COLS = 'id, trip_id, sender_id, size, weight_kg, content, description, recipient_name, status, requested_at, picked_up_at, delivered_at, carrier_amount_cents, total_cents, paid_at, refunded_at, transferred_at, photo_path, pickup_photo_path, rejection_stage, rejection_reason';
 
 function check<T>(res: { data: T; error: unknown }): T {
   if (res.error) throw res.error;
@@ -145,14 +145,6 @@ export async function getProfile(id: string): Promise<User | null> {
 export async function updateProfile(id: string, patch: { name?: string; bio?: string }) {
   check(await supabase.from('profiles').update(patch).eq('id', id));
 }
-export async function getMyPhone(id: string): Promise<string | null> {
-  const r = check(await supabase.from('profile_private').select('phone').eq('id', id).maybeSingle()) as { phone: string | null } | null;
-  return r?.phone ?? null;
-}
-export async function setMyPhone(id: string, phone: string) {
-  check(await supabase.from('profile_private').update({ phone, updated_at: new Date().toISOString() }).eq('id', id));
-}
-
 export async function getReviews(aboutId: string): Promise<Review[]> {
   const rows = check(await supabase.from('reviews')
     .select('id, role, stars, text, created_at, author:profiles!reviews_author_id_fkey(name)')
@@ -242,17 +234,17 @@ export async function myTrips(userId: string): Promise<(Trip & { pending: number
 /* ------------------------------------------------------------------ */
 
 export interface NewPackage {
-  size: PackageSize; weightKg: number; content: string; description: string; recipientName: string; recipientPhone: string;
-  declaredValue: number; // €
+  size: PackageSize; weightKg: number; content: string; description: string; recipientName: string;
+  valueTier: ValueTier; // tramo de valor: solo lo ven el sender y WannaSend
   photoPath: string;
   noProhibited: boolean;
 }
 
 export async function requestShipment(tripId: string, p: NewPackage): Promise<string> {
-  return check(await supabase.rpc('request_shipment', {
+  return check(await supabase.rpc('request_shipment_v2', {
     p_trip: tripId, p_size: toDbSize(p.size), p_weight: p.weightKg, p_content: p.content,
-    p_description: p.description, p_recipient_name: p.recipientName, p_recipient_phone: p.recipientPhone,
-    p_declared_value_cents: Math.round(p.declaredValue * 100), p_photo_path: p.photoPath, p_no_prohibited: p.noProhibited,
+    p_description: p.description, p_recipient_name: p.recipientName,
+    p_value_tier: p.valueTier, p_photo_path: p.photoPath, p_no_prohibited: p.noProhibited,
   })) as string;
 }
 
@@ -291,14 +283,14 @@ export async function myShipments(userId: string): Promise<Shipment[]> {
 
 export async function getShipment(id: string): Promise<Shipment | null> {
   const r = check(await supabase.from('shipments')
-    .select(`${SHIPMENT_COLS}, trip:trips(${TRIP_COLS}), sender:profiles!shipments_sender_id_fkey(name, verified), contact:shipment_contacts(recipient_phone)`)
+    .select(`${SHIPMENT_COLS}, trip:trips(${TRIP_COLS}), sender:profiles!shipments_sender_id_fkey(name, verified), value:shipment_values(tier, exact_cents)`)
     .eq('id', id).maybeSingle()) as unknown as ShipmentRow | null;
   return r ? toShipment(r) : null;
 }
 
 export async function tripShipments(tripId: string): Promise<Shipment[]> {
   const rows = check(await supabase.from('shipments')
-    .select(`${SHIPMENT_COLS}, sender:profiles!shipments_sender_id_fkey(name, verified), contact:shipment_contacts(recipient_phone)`)
+    .select(`${SHIPMENT_COLS}, sender:profiles!shipments_sender_id_fkey(name, verified)`)
     .eq('trip_id', tripId).order('requested_at')) as unknown as ShipmentRow[];
   return rows.map(toShipment);
 }

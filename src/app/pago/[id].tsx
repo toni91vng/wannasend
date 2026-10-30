@@ -3,9 +3,9 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { askFeedback, markShipmentSent } from '@/components/FeedbackHost';
 import { useState } from 'react';
 import { Button, Card, Divider, H3, InfoBox, KeyValue, Loading, Row, Screen, Small, Steps } from '@/components/ui';
-import { NewPackage, requestShipment, setMyPhone } from '@/data/api';
+import { NewPackage, requestShipment } from '@/data/api';
+import { VALUE_TIERS } from '@/data/types';
 import { useAppConfig, useMyVerification, useProfile, useTrip } from '@/data/hooks';
-import { useMe } from '@/data/session';
 import { notify } from '@/lib/notify';
 import { payShipment } from '@/lib/payments';
 import { euros } from '@/lib/pricing';
@@ -19,8 +19,7 @@ import { colors } from '@/lib/theme';
  * "solicitado" cuando Stripe confirma el cobro. Si el carrier rechaza o no responde en 12 h, se reembolsa solo.
  */
 export default function Pago() {
-  const { id, pkg, myPhone } = useLocalSearchParams<{ id: string; pkg: string; myPhone?: string }>();
-  const me = useMe();
+  const { id, pkg } = useLocalSearchParams<{ id: string; pkg: string }>();
   const { data: t } = useTrip(id);
   const { data: carrier } = useProfile(t?.carrierId);
   const { data: cfg } = useAppConfig();
@@ -41,10 +40,7 @@ export default function Pago() {
 
   const send = async () => {
     setBusy(true);
-    const sid = await run(async () => {
-      if (myPhone) await setMyPhone(me, myPhone);
-      return requestShipment(t.id, p);
-    }, 'No se ha podido crear la solicitud', (msg) => /Verifica tu identidad/.test(msg) ? () => router.push('/verificar') : undefined);
+    const sid = await run(() => requestShipment(t.id, p), 'No se ha podido crear la solicitud', (msg) => /Verifica tu identidad/.test(msg) ? () => router.push('/verificar') : undefined);
     if (!sid) { setBusy(false); return; }
     if (!payments) { setBusy(false); go(sid); return; }
     try {
@@ -79,9 +75,9 @@ export default function Pago() {
       <Card>
         <H3>Tu paquete</H3>
         <KeyValue k="Tamaño y peso" v={`${p.size} · ${String(p.weightKg).replace('.', ',')} kg`} />
-        <KeyValue k="Valor declarado" v={euros(p.declaredValue)} />
+        <KeyValue k="Valor aproximado (solo lo ves tú)" v={VALUE_TIERS.find((v) => v.id === p.valueTier)?.label ?? ''} />
         <KeyValue k="Contenido" v={p.content} />
-        <KeyValue k="Destinatario" v={p.recipientName} />
+        <KeyValue k="Se lo entrega a" v={p.recipientName} />
       </Card>
       {needsIdentity ? (
         <Card>

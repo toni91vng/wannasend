@@ -77,7 +77,7 @@ export default function MiTrayecto() {
       <Ionicons name="cube-outline" size={22} color={colors.textSecondary} />
       <View style={{ flex: 1 }}>
         <H3 style={{ fontSize: 14 }}>{s.size} · {String(s.weightKg).replace('.', ',')} kg</H3>
-        <Small>{s.content}{s.description ? ` · ${s.description}` : ''} · valor declarado {euros(s.declaredValue)}</Small>
+        <Small>{s.content}{s.description ? ` · ${s.description}` : ''}</Small>
       </View>
     </Row>
   );
@@ -137,7 +137,7 @@ export default function MiTrayecto() {
         <Card key={s.id}>
           <Row>
             <Avatar name={s.senderName ?? '?'} size={36} />
-            <View style={{ flex: 1 }}><H3>{s.senderName}</H3><Small>Para {s.recipientName}{s.recipientPhone ? ` · ${s.recipientPhone}` : ''}</Small></View>
+            <View style={{ flex: 1 }}><H3>{s.senderName}</H3><Small>Se lo entregas a {s.recipientName}</Small></View>
             <Badge label={STATUS[s.status].label} tone={STATUS[s.status].tone} />
           </Row>
           {pkgBox(s)}

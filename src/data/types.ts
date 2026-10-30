@@ -100,7 +100,6 @@ export interface Shipment {
   content: string;
   description: string;
   recipientName: string;
-  recipientPhone?: string; // solo visible para el carrier tras aceptar
   status: ShipmentStatus;
   requestedAt: number;
   pickedUpAt?: string; // HH:MM
@@ -110,7 +109,7 @@ export interface Shipment {
   paid: boolean;
   refunded: boolean;
   transferred: boolean;
-  declaredValue: number; // €
+  valueLabel?: string; // tramo de valor declarado: solo lo recibe el sender
   photoPath?: string;
   pickupPhotoPath?: string | null;
   rejectionStage?: 'solicitud' | 'recogida' | null;
@@ -170,3 +169,11 @@ export interface Movement {
   amount: number;
   at: string;
 }
+
+/** Tramos de valor declarado (30/10/2026): el carrier no los ve, solo el sender y WannaSend. */
+export type ValueTier = 'hasta_50' | '50_150' | '150_300';
+export const VALUE_TIERS: { id: ValueTier; label: string; max: number }[] = [
+  { id: 'hasta_50', label: 'Menos de 50 €', max: 50 },
+  { id: '50_150', label: 'De 50 a 150 €', max: 150 },
+  { id: '150_300', label: 'De 150 a 300 €', max: 300 },
+];

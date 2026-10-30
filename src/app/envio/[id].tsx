@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Platform, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { PackagePhoto, VerifiedBadge } from '@/components/Photos';
 import { Timeline } from '@/components/TripCard';
 import {
@@ -55,9 +55,7 @@ export default function Envio() {
   const shareCode = async () => {
     if (!code) return;
     const msg = `Hola ${sh.recipientName}, te llega un paquete con WannaSend (${t.from} → ${t.to}, ${longDate(t.date)}, sobre las ${t.arrival}). Cuando ${name} te lo entregue, dale este código: ${code}`;
-    if (Platform.OS === 'web') { shareText(msg); return; }
-    const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
-    if (await Linking.canOpenURL(url)) Linking.openURL(url); else shareText(msg);
+    shareText(msg);
   };
   const cancel = async () => {
     setBusy(true);
@@ -136,8 +134,8 @@ export default function Envio() {
         <Timeline trip={t} showPoints />
         <Divider />
         <KeyValue k="Paquete" v={`${sh.size} · ${String(sh.weightKg).replace('.', ',')} kg`} />
-        <KeyValue k="Destinatario" v={sh.recipientName} />
-        <KeyValue k="Valor declarado" v={euros(sh.declaredValue)} />
+        <KeyValue k="Se lo entrega a" v={sh.recipientName} />
+        {sh.valueLabel ? <KeyValue k="Valor aproximado (solo lo ves tú)" v={sh.valueLabel} /> : null}
         <KeyValue k={sh.refunded ? 'Reembolsado' : sh.paid ? 'Pagado' : 'Precio'} v={euros(sh.total)} accent />
       </Card>
 
@@ -165,7 +163,7 @@ export default function Envio() {
           <Card style={{ alignItems: 'center' }}>
             <Small>Código de entrega para {sh.recipientName}</Small>
             <Text style={{ fontFamily: fonts.semibold, fontSize: 34, letterSpacing: 10, color: colors.text }}>{code ?? '····'}</Text>
-            <Button label="Compartir código con el destinatario" icon="logo-whatsapp" onPress={shareCode} disabled={!code} style={{ alignSelf: 'stretch' }} />
+            <Button label="Compartir código" icon="share-social-outline" onPress={shareCode} disabled={!code} style={{ alignSelf: 'stretch' }} />
             <Small style={{ textAlign: 'center' }}>Solo el destinatario debe conocerlo. No se lo des al carrier.</Small>
           </Card>
           <Button variant="secondary" label={`Contactar con ${name}`} icon="chatbubble-outline" onPress={chat} />

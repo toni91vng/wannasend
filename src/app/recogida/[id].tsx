@@ -82,12 +82,11 @@ export default function Recogida() {
         <PackagePhoto path={sh.photoPath} />
         <KeyValue k="Contenido" v={sh.description ? `${sh.content} · ${sh.description}` : sh.content} />
         <KeyValue k="Tamaño y peso" v={`${sh.size} · ${String(sh.weightKg).replace('.', ',')} kg`} />
-        <KeyValue k="Valor declarado" v={euros(sh.declaredValue)} />
       </Card>
 
       <Card>
-        <H3>1. Mira el contenido</H3>
-        <Muted>Pide que abran el paquete delante de ti y que lo cierren después. Si no te dejan verlo, puedes rechazarlo.</Muted>
+        <H3>1. Compara con la foto</H3>
+        <Muted>Comprueba que el paquete coincide con la foto. Si algo no te cuadra, puedes pedir verlo o rechazarlo, sin ninguna penalización.</Muted>
         <H3>2. Haz una foto</H3>
         <PhotoPicker value={photo} onChange={setPhoto} label="Foto del paquete al recogerlo" hint="Queda como prueba para ti si hay cualquier incidencia." />
       </Card>
