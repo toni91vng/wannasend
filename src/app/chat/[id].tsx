@@ -63,7 +63,7 @@ export default function Chat() {
         </View>
       </Row>
       <ScrollView ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })} contentContainerStyle={{ padding: 16, gap: 8 }}>
-        <Muted style={{ textAlign: 'center', fontSize: 13, marginBottom: 8 }}>Acuerda aquí la recogida y la entrega. No compartas datos bancarios.</Muted>
+        <Muted style={{ textAlign: 'center', fontSize: 13, marginBottom: 8 }}>Acuerda aquí la recogida y la entrega. Por tu seguridad, los teléfonos, emails, enlaces y redes sociales se ocultan: habla siempre por este chat.</Muted>
         {!messages ? <Loading /> : null}
         {messages?.map((m) => {
           const mine = m.senderId === me;
