@@ -76,6 +76,8 @@ export interface Trip {
   capRemaining?: number | null; // lo que queda del tope (€)
   startedAt?: string | null; // "Empiezo el trayecto"
   requireVerifiedSender?: boolean;
+  fromKm?: number; // búsqueda: distancia desde tu origen hasta donde puede recogerlo (inicio o punto de la ruta)
+  toKm?: number; // búsqueda: distancia desde donde puede entregarlo hasta tu destino
 }
 
 export type ShipmentStatus =

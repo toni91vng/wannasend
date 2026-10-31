@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { View } from 'react-native';
 import { Trip, User } from '@/data/types';
@@ -32,9 +33,9 @@ export function Timeline({ trip, showPoints }: { trip: Trip; showPoints?: boolea
 }
 
 /** Tarjeta de trayecto para listados (precio = lo que paga el sender). */
-export function TripCard({ trip, carrier, onPress, status, priceMode = 'sender', showDate }: {
+export function TripCard({ trip, carrier, onPress, status, priceMode = 'sender', showDate, note }: {
   trip: Trip; carrier?: User; onPress?: () => void; status?: { label: string; tone: 'green' | 'amber' | 'gray' | 'red' };
-  priceMode?: 'sender' | 'carrier'; showDate?: boolean;
+  priceMode?: 'sender' | 'carrier'; showDate?: boolean; note?: string;
 }) {
   const price = priceMode === 'sender' ? trip.total : trip.pricePerPackage;
   return (
@@ -47,6 +48,9 @@ export function TripCard({ trip, carrier, onPress, status, priceMode = 'sender',
           {status ? <Badge label={status.label} tone={status.tone} /> : null}
         </View>
       </Row>
+      {note ? (
+        <Row gap={6}><Ionicons name="git-merge-outline" size={14} color={colors.primaryDark} /><Small style={{ flex: 1, color: colors.primaryDark }}>{note}</Small></Row>
+      ) : null}
       {carrier || trip.carrierName ? (
         <Row>
           <Avatar name={carrier?.name ?? trip.carrierName!} size={32} />

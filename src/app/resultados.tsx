@@ -5,7 +5,7 @@ import { Text, View } from 'react-native';
 import { TripCard } from '@/components/TripCard';
 import { Button, Chips, EmptyState, ErrorBox, H2, Loading, Muted, Screen } from '@/components/ui';
 import { useNearbyDays, useSearch } from '@/data/hooks';
-import { Place } from '@/data/types';
+import { Place, Trip } from '@/data/types';
 import { longDate, shortDate } from '@/lib/format';
 import { errorText } from '@/lib/supabase';
 import { colors, fonts } from '@/lib/theme';
@@ -46,7 +46,7 @@ export default function Resultados() {
       {error ? <ErrorBox text={errorText(error)} onRetry={() => refetch()} /> : null}
 
       {list?.map((t) => (
-        <TripCard key={t.id} trip={t} onPress={() => router.push(`/trayecto/${t.id}`)} />
+        <TripCard key={t.id} trip={t} note={passNote(t, from, to)} onPress={() => router.push(`/trayecto/${t.id}`)} />
       ))}
 
       {list && !list.length ? (
@@ -68,4 +68,19 @@ export default function Resultados() {
       ) : null}
     </Screen>
   );
+}
+
+const norm = (s?: string) => (s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const km = (n?: number) => (n === undefined ? '' : n < 1 ? 'a menos de 1 km' : `a ${String(Math.round(n)).replace('.', ',')} km`);
+
+/** Si el trayecto no empieza o acaba en tu ciudad (va más lejos o pasa por ella), dónde lo recoge y entrega. */
+function passNote(t: Trip, from: Place, to: Place) {
+  const a = norm(from.city || from.label), b = norm(to.city || to.label);
+  const viaFrom = a && norm(t.from) !== a, viaTo = b && norm(t.to) !== b;
+  if (!viaFrom && !viaTo) return undefined;
+  const parts = [
+    viaFrom ? `recoge ${km(t.fromKm)} de ${from.city || from.label}` : '',
+    viaTo ? `entrega ${km(t.toKm)} de ${to.city || to.label}` : '',
+  ].filter(Boolean).join(' · ');
+  return parts.charAt(0).toUpperCase() + parts.slice(1);
 }

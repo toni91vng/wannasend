@@ -18,6 +18,33 @@ function estimateKm(a: Pt, b: Pt) {
   return Math.max(1, Math.round(2 * R * Math.asin(Math.sqrt(h)) * 1.2));
 }
 
+/** Decodifica una polilínea de Google (precisión 5) a [lng, lat]. */
+function decodePolyline(enc: string): [number, number][] {
+  const pts: [number, number][] = [];
+  let i = 0, lat = 0, lng = 0;
+  while (i < enc.length) {
+    for (const k of [0, 1]) {
+      let shift = 0, result = 0, b: number;
+      do { b = enc.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      const d = result & 1 ? ~(result >> 1) : result >> 1;
+      if (k === 0) lat += d; else lng += d;
+    }
+    pts.push([lng / 1e5, lat / 1e5]);
+  }
+  return pts;
+}
+
+/** Ruta como LINESTRING (máx. ~300 puntos) para buscar trayectos "de paso". */
+function routeWkt(enc?: string): string | null {
+  if (!enc) return null;
+  const pts = decodePolyline(enc);
+  if (pts.length < 2) return null;
+  const step = Math.max(1, Math.ceil(pts.length / 300));
+  const kept = pts.filter((_, i) => i % step === 0);
+  if (kept[kept.length - 1] !== pts[pts.length - 1]) kept.push(pts[pts.length - 1]);
+  return `SRID=4326;LINESTRING(${kept.map(([x, y]) => `${x.toFixed(5)} ${y.toFixed(5)}`).join(',')})`;
+}
+
 async function route(req: Request, from: Pt, to: Pt, key: string | undefined) {
   const estimate = { km: estimateKm(from, to), source: 'estimada' };
   if (!key) return json(estimate);
@@ -31,7 +58,7 @@ async function route(req: Request, from: Pt, to: Pt, key: string | undefined) {
   try {
     const r = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'routes.distanceMeters' },
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'routes.distanceMeters,routes.polyline.encodedPolyline' },
       body: JSON.stringify({
         origin: { location: { latLng: { latitude: from.lat, longitude: from.lng } } },
         destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
@@ -40,12 +67,14 @@ async function route(req: Request, from: Pt, to: Pt, key: string | undefined) {
       }),
     });
     if (!r.ok) return json(estimate);
-    const meters = (await r.json())?.routes?.[0]?.distanceMeters;
+    const best = (await r.json())?.routes?.[0];
+    const meters = best?.distanceMeters;
     if (!meters) return json(estimate);
     const km = Math.max(1, Math.round(meters / 1000));
     await db.from('route_quotes').insert({
       user_id: uid, distance_km: km,
       from_point: `SRID=4326;POINT(${from.lng} ${from.lat})`, to_point: `SRID=4326;POINT(${to.lng} ${to.lat})`,
+      path: routeWkt(best?.polyline?.encodedPolyline),
     });
     return json({ km, source: 'carretera' });
   } catch {

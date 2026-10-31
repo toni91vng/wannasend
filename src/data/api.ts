@@ -179,8 +179,8 @@ export async function placeDetails(placeId: string, sessionToken: string): Promi
 export async function searchTrips(from: Place, to: Place, day: string, radiusKm = 20): Promise<Trip[]> {
   const rows = check(await supabase.rpc('search_trips', {
     p_from_lat: from.lat, p_from_lng: from.lng, p_to_lat: to.lat, p_to_lng: to.lng, p_day: day, p_radius_km: radiusKm,
-  })) as TripRow[];
-  return rows.map(toTrip);
+  })) as (TripRow & { from_km?: number; to_km?: number })[];
+  return rows.map((r) => ({ ...toTrip(r), fromKm: r.from_km != null ? Number(r.from_km) : undefined, toKm: r.to_km != null ? Number(r.to_km) : undefined }));
 }
 export async function nearbyDays(from: Place, to: Place): Promise<{ day: string; trips: number }[]> {
   return check(await supabase.rpc('nearby_trip_days', { p_from_lat: from.lat, p_from_lng: from.lng, p_to_lat: to.lat, p_to_lng: to.lng })) as any[];
