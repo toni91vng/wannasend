@@ -6,8 +6,8 @@
 //  - identity:        crea una verificación de identidad con Stripe Identity (DNI + selfie) y devuelve su enlace.
 //  - identity_status: consulta el resultado y lo guarda (también llega por el webhook).
 import {
-  admin, callerId, carrierOnboardingLink, carrierTransfersActive, CORS, createCarrierAccount, json, stripeClient, syncIdentity,
-  verifiedPrefill,
+  admin, callerId, carrierOnboardingLink, carrierTransfersActive, CORS, createCarrierAccount, fillTestOnboarding, json, stripeClient,
+  stripeTestMode, syncIdentity, verifiedPrefill,
 } from '../_shared/common.ts';
 
 /**
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
       if (!accountId) {
         if (body.action !== 'onboarding') return json({ ready: false, hasAccount: false });
         const { data: user } = await db.auth.admin.getUserById(uid);
-        const prefill = priv?.identity_status === 'verificado' && priv.identity_session_id
+        const prefill = !stripeTestMode() && priv?.identity_status === 'verificado' && priv.identity_session_id
           ? await verifiedPrefill(stripe, priv.identity_session_id) : undefined;
         const acct = await createCarrierAccount(uid, user.user?.email ?? undefined, prefill);
         accountId = acct.id;
@@ -102,6 +102,11 @@ Deno.serve(async (req) => {
       if (body.action === 'dashboard' && ready) {
         const link = await stripe.accounts.createLoginLink(accountId);
         return json({ url: link.url, ready });
+      }
+      // Modo prueba: se rellena todo con datos de prueba; el tester solo acepta las condiciones de Stripe
+      if (!ready && stripeTestMode()) {
+        const { data: prof } = await db.from('profiles').select('name').eq('id', uid).single();
+        await fillTestOnboarding(accountId, prof?.name ?? '');
       }
       return json({ url: await carrierOnboardingLink(accountId, RETURN_URL), ready });
     }

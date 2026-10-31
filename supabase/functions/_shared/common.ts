@@ -96,6 +96,45 @@ async function ensureCarrierProfile(accountId: string) {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Modo prueba: alta de cobros rellenada con datos de prueba de Stripe  */
+/* ------------------------------------------------------------------ */
+
+/** Solo con la clave de prueba (sk_test). En modo real nunca se rellena nada. */
+export const stripeTestMode = () => (Deno.env.get('STRIPE_SECRET_KEY') ?? '').startsWith('sk_test');
+
+/**
+ * Datos de prueba que Stripe acepta como verificados (fecha 01/01/1901, dirección "address_full_match",
+ * NIF 000000000) e IBAN de prueba. Así el tester solo tiene que aceptar las condiciones de Stripe,
+ * que es lo único que WannaSend no puede hacer por él (comprobado el 31/10/2026).
+ */
+export async function fillTestOnboarding(accountId: string, name: string) {
+  if (!stripeTestMode()) return;
+  const [given, ...rest] = (name || 'Tester').trim().split(/\s+/);
+  try {
+    await stripeV2('POST', `/v2/core/accounts/${accountId}`, {
+      identity: { individual: {
+        given_name: given, surname: rest.join(' ') || 'Prueba',
+        date_of_birth: { day: 1, month: 1, year: 1901 },
+        address: { line1: 'address_full_match', city: 'Barcelona', postal_code: '08001', country: 'es' },
+        id_numbers: [{ type: 'es_nif', value: '000000000' }],
+        phone: '+34600000000',
+      } },
+    });
+  } catch (e) { console.error('datos de prueba no aplicados', accountId, e); }
+  try {
+    const res = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        'external_account[object]': 'bank_account', 'external_account[country]': 'ES', 'external_account[currency]': 'eur',
+        'external_account[account_number]': 'ES0700120345030000067890', 'external_account[account_holder_name]': name || 'Tester',
+      }),
+    });
+    if (!res.ok) console.error('IBAN de prueba no añadido', accountId, await res.text());
+  } catch (e) { console.error('IBAN de prueba no añadido', accountId, e); }
+}
+
 /** ¿Puede el carrier recibir transferencias ya? */
 export async function carrierTransfersActive(accountId: string): Promise<boolean> {
   const a = await stripeV2<any>('GET', `/v2/core/accounts/${accountId}?include[0]=configuration.recipient`);
