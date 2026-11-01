@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { TripCard } from '@/components/TripCard';
 import { Button, EmptyState, ErrorBox, Loading, Muted, Screen, Segmented } from '@/components/ui';
+import { RoutinesCard } from '@/components/RoutinesCard';
 import { useMyShipments, useMyTrips } from '@/data/hooks';
 import { isUpcoming, STATUS } from '@/lib/format';
 import { errorText } from '@/lib/supabase';
@@ -29,6 +30,7 @@ export default function Trayectos() {
         )
       ) : null}
 
+      {tab === 'Mis trayectos' ? <RoutinesCard /> : null}
       {tab === 'Mis trayectos' && trips.data ? (
         trips.data.length ? trips.data.map((t) => {
           const status = tripStatus(t);

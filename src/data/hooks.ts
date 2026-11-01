@@ -69,3 +69,5 @@ export const useMyVerification = () => {
   const me = useMe();
   return useQuery({ queryKey: ['verification', me], queryFn: api.myVerification, enabled: !!me });
 };
+
+export const useMyRoutines = () => useQuery({ queryKey: ['routines'], queryFn: api.myRoutines });

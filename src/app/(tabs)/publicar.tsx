@@ -8,7 +8,7 @@ import {
   Badge, Button, Card, Checkbox, Chips, DatePicker, Divider, H3, InfoBox, KeyValue, Label, Muted, Row, Screen,
   Small, Stepper, Steps,
 } from '@/components/ui';
-import { publishTrip, routeDistance } from '@/data/api';
+import { makeTripRoutine, publishTrip, routeDistance, WEEKDAYS } from '@/data/api';
 import { useAppConfig, useMyVerification } from '@/data/hooks';
 import { PackageSize, Place, SIZES } from '@/data/types';
 import { longDate } from '@/lib/format';
@@ -36,6 +36,8 @@ export default function Publicar() {
   const [arrival, setArrival] = useState('20:50');
   const [arrivalTouched, setArrivalTouched] = useState(false);
   const [nextDay, setNextDay] = useState(false);
+  const [habitual, setHabitual] = useState(false);
+  const [days, setDays] = useState<number[]>([]);
   const [maxSize, setMaxSize] = useState<PackageSize>('Mediano');
   const [capacity, setCapacity] = useState(3);
   const [maxWeightKg, setMaxWeight] = useState(10);
@@ -88,17 +90,24 @@ export default function Publicar() {
 
   const can = [
     !!from && !!to && !!route && km >= 5 && !tooShort && !needsPayouts,
-    !!departureAt && !!arrivalAt && arrivalOk && future,
+    !!departureAt && !!arrivalAt && arrivalOk && future && (!habitual || days.length > 0),
     priceCents >= range.min && priceCents <= range.max && capacity >= 1 && capacity <= maxPackages,
     agree,
   ][step - 1];
 
   const publish = async () => {
     setBusy(true);
-    const id = await run(() => publishTrip({ from: from!, to: to!, departureAt: departureAt!, arrivalAt: arrivalAt!, capacity, maxSize, maxWeightKg, priceCents }), 'No se ha podido publicar');
+    const id = await run(async () => {
+      const tripId = await publishTrip({ from: from!, to: to!, departureAt: departureAt!, arrivalAt: arrivalAt!, capacity, maxSize, maxWeightKg, priceCents });
+      // Trayecto habitual: WannaSend publica también los próximos días elegidos (7 días vista)
+      if (habitual && days.length) await makeTripRoutine(tripId, days);
+      return tripId;
+    }, 'No se ha podido publicar');
     setBusy(false);
     if (!id) return;
     qc.invalidateQueries({ queryKey: ['myTrips'] });
+    qc.invalidateQueries({ queryKey: ['routines'] });
+    setHabitual(false); setDays([]);
     setStep(1); setFrom(undefined); setTo(undefined); setAgree(false);
     router.push(`/publicado/${id}`);
   };
@@ -145,6 +154,18 @@ export default function Publicar() {
           <Checkbox checked={nextDay} onChange={(v) => { setNextDay(v); setArrivalTouched(true); }}>
             <Muted>Llego al día siguiente</Muted>
           </Checkbox>
+          <Divider />
+          <Checkbox checked={habitual} onChange={(v) => { setHabitual(v); if (v && !days.length) setDays([isoDay(date)]); }}>
+            <Muted>Lo hago a menudo (trayecto habitual)</Muted>
+          </Checkbox>
+          {habitual ? (
+            <View style={{ gap: 6 }}>
+              <Label>¿Qué días?</Label>
+              <Chips multi options={WEEKDAYS} value={days.map((d) => WEEKDAYS[d - 1])}
+                onChange={(l) => { const d = WEEKDAYS.indexOf(l) + 1; setDays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d].sort())); }} />
+              <Small>Publicaremos este trayecto los días marcados, siempre con una semana de antelación. Podrás cancelar un día suelto o pausarlo desde Trayectos.</Small>
+            </View>
+          ) : null}
           <View><Label>Tamaño máximo que aceptas</Label><Chips options={SIZES} value={maxSize} onChange={setMaxSize} /></View>
           <Row style={{ justifyContent: 'space-between' }}><Muted>Peso máximo por paquete</Muted><Stepper value={maxWeightKg} onChange={setMaxWeight} min={1} max={30} format={(n) => `${n} kg`} /></Row>
         </Card>
@@ -178,6 +199,7 @@ export default function Publicar() {
             <Text style={{ fontFamily: fonts.semibold, fontSize: 18, color: colors.primaryDark }}>{longDate(date)}</Text>
             <KeyValue k={`${departure}  Salida`} v={from.label} />
             <KeyValue k={`${arrival}${nextDay ? ' (+1 día)' : ''}  Llegada`} v={to.label} />
+            {habitual && days.length ? <KeyValue k="Habitual" v={days.map((d) => WEEKDAYS[d - 1]).join(' · ')} /> : null}
             <Divider />
             <KeyValue k="Paquetes" v={`Hasta ${capacity}`} />
             <KeyValue k="Tamaño máximo" v={maxSize} />
@@ -193,4 +215,10 @@ export default function Publicar() {
       ) : null}
     </Screen>
   );
+}
+
+/** Día de la semana ISO (1 = lunes … 7 = domingo) de una fecha AAAA-MM-DD. */
+function isoDay(day: string) {
+  const d = new Date(`${day}T12:00:00`).getDay();
+  return d === 0 ? 7 : d;
 }

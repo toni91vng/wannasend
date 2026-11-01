@@ -204,6 +204,24 @@ export async function publishTrip(t: {
   }).select('id').single()) as { id: string };
   return row.id;
 }
+/* ---------- Trayectos habituales ---------- */
+export const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'] as const; // ISO: 1 = lunes … 7 = domingo
+export interface Routine {
+  id: string; weekdays: number[]; departure: string; from: string; to: string; pricePerPackage: number; active: boolean;
+}
+export async function makeTripRoutine(tripId: string, weekdays: number[]) {
+  return check(await supabase.rpc('make_trip_routine', { p_trip: tripId, p_weekdays: weekdays })) as string;
+}
+export async function myRoutines(): Promise<Routine[]> {
+  const rows = check(await supabase.from('trip_routines').select('id, weekdays, departure_time, from_city, to_city, price_cents, active')
+    .order('created_at')) as any[];
+  return rows.map((r) => ({ id: r.id, weekdays: r.weekdays, departure: String(r.departure_time).slice(0, 5), from: r.from_city, to: r.to_city,
+    pricePerPackage: r.price_cents / 100, active: r.active }));
+}
+export async function setRoutine(id: string, action: 'pausar' | 'reanudar' | 'borrar') {
+  check(await supabase.rpc('set_trip_routine', { p_routine: id, p_action: action }));
+}
+
 /** Distancia por carretera calculada en el servidor (Google). Si no está disponible, devuelve la estimación. */
 export async function routeDistance(from: Place, to: Place): Promise<{ km: number; source: 'carretera' | 'estimada' } | null> {
   const { data, error } = await supabase.functions.invoke('places', {
