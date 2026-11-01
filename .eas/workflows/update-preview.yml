@@ -1,0 +1,14 @@
+# Publica una actualización automática (solo cambios de pantalla) para los APK del canal "preview".
+# Solo llega a las apps con la misma versión (runtimeVersion = versión de app.json).
+name: Actualización preview
+
+on: {}
+
+jobs:
+  publish_update:
+    name: Publicar actualización (preview)
+    type: update
+    params:
+      branch: preview
+      message: 'Actualización desde main'
+      platform: android
