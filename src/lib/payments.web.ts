@@ -1,18 +1,57 @@
-// En la versión web (demo) no hay pagos: el SDK de Stripe para móvil no funciona en navegador.
-export async function payShipment(_shipmentId: string): Promise<'paid' | 'canceled'> {
-  throw new Error('Los pagos solo están disponibles en la app del móvil.');
+import { supabase } from './supabase';
+
+/**
+ * Versión web (02/11/2026): el SDK de Stripe para móvil no funciona en el navegador, así que se usan las
+ * páginas de Stripe (pago, alta de cobros e identidad) y se vuelve a la web al terminar.
+ * La página sale de la app al ir a Stripe; al volver, la app se carga de nuevo en la pantalla indicada.
+ */
+async function invoke<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('payments', { body: { ...body, origin: window.location.origin } });
+  if (error) {
+    let detail: { error?: string; message?: string } = {};
+    try { detail = await (error as { context?: Response }).context?.json(); } catch { /* sin cuerpo */ }
+    if (detail.error === 'payments_not_configured') throw new Error('Los pagos aún no están activados.');
+    if (detail.error === 'bad_origin') throw new Error('Esta dirección web no está autorizada para pagos.');
+    throw new Error(detail.message ?? 'No se ha podido conectar con el sistema de pagos.');
+  }
+  return data as T;
 }
-export const paymentsSupported = false;
+
+/** Abre la página de pago de Stripe. Al terminar, Stripe devuelve a la pantalla del envío. */
+export async function payShipment(shipmentId: string): Promise<'paid' | 'canceled'> {
+  const { url } = await invoke<{ url: string }>({ action: 'checkout', shipmentId });
+  window.location.assign(url);
+  // La página se va a Stripe; esta promesa no llega a resolverse
+  return new Promise(() => undefined);
+}
+
+export const paymentsSupported = true;
+
 export async function payoutStatus() {
-  return { ready: false, hasAccount: false };
+  return invoke<{ ready: boolean; hasAccount: boolean }>({ action: 'status' });
 }
-export async function openPayouts(_kind: 'onboarding' | 'dashboard') {
-  throw new Error('Configura tus cobros desde la app del móvil.');
+
+/** Alta o panel de cobros del carrier en Stripe (misma pestaña; vuelve a Ganancias). */
+export async function openPayouts(kind: 'onboarding' | 'dashboard') {
+  const { url } = await invoke<{ url: string }>({ action: kind });
+  if (kind === 'dashboard') window.open(url, '_blank', 'noopener');
+  else window.location.assign(url);
 }
+
 export type IdentityStatus = 'sin_verificar' | 'pendiente' | 'verificado' | 'fallido';
+
+/** Verificación de identidad en la web de Stripe (misma pestaña; vuelve a Verificar identidad). */
 export async function verifyIdentity(): Promise<IdentityStatus> {
-  throw new Error('Verifica tu identidad desde la app del móvil.');
+  const r = await invoke<{ url?: string; status?: IdentityStatus }>({ action: 'identity' });
+  if (r.status === 'verificado') return 'verificado';
+  if (r.url) {
+    window.location.assign(r.url);
+    return new Promise(() => undefined);
+  }
+  return identityStatus();
 }
+
 export async function identityStatus(): Promise<IdentityStatus> {
-  return 'sin_verificar';
+  const r = await invoke<{ status: IdentityStatus }>({ action: 'identity_status' });
+  return r.status;
 }

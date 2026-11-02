@@ -77,7 +77,6 @@ export default function Registro() {
         <Muted>Quiero recibir novedades y promociones de WannaSend.</Muted>
       </Checkbox>
       {error ? <ErrorBox text={error} /> : null}
-      <Small>Te pediremos el móvil antes de tu primer envío.</Small>
     </Screen>
   );
 }

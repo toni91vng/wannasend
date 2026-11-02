@@ -22,7 +22,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "output": "single"
+      "output": "single",
+      "name": "WannaSend",
+      "shortName": "WannaSend",
+      "lang": "es",
+      "themeColor": "#5DB075",
+      "backgroundColor": "#5DB075",
+      "display": "standalone",
+      "description": "Envía paquetes con personas que ya hacen ese trayecto."
     },
     "plugins": [
       [

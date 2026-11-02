@@ -1,0 +1,11 @@
+# Publica la versión web en Expo Hosting (producción). Se lanza a mano.
+name: Publicar web
+
+on: {}
+
+jobs:
+  deploy:
+    type: deploy
+    name: Publicar web
+    params:
+      prod: true

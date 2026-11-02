@@ -32,7 +32,7 @@ const hhmm = (iso?: string | null) => (iso ? new Date(iso).toLocaleTimeString('e
 
 /** Seguimiento de un envío (vista del sender). Se actualiza solo cuando el carrier cambia el estado. */
 export default function Envio() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, pago } = useLocalSearchParams<{ id: string; pago?: string }>(); // pago: vuelta de Stripe en la web
   const qc = useQueryClient();
   const { data: sh, isLoading, error } = useShipment(id);
   const t = sh?.trip;
@@ -76,9 +76,11 @@ export default function Envio() {
 
   const head = (() => {
     switch (sh.status) {
-      case 'pendiente_pago': return { icon: 'card-outline' as const, tone: 'amber' as const, title: 'Pago pendiente', text: `Completa el pago para enviar la solicitud a ${name}. Si no, se cancelará en 30 minutos.` };
+      case 'pendiente_pago': return pago === 'ok'
+        ? { icon: 'time-outline' as const, tone: 'amber' as const, title: 'Confirmando tu pago…', text: `Stripe nos está confirmando el pago. En unos segundos se enviará la solicitud a ${name}.` }
+        : { icon: 'card-outline' as const, tone: 'amber' as const, title: 'Pago pendiente', text: `Completa el pago para enviar la solicitud a ${name}. Si no, se cancelará en 30 minutos.` };
       case 'solicitado': return { icon: 'time-outline' as const, tone: 'amber' as const, title: `Esperando respuesta de ${name}`, text: `Te avisaremos en cuanto responda. Si no responde en 12 h, la solicitud caduca. Enviada ${timeAgo(sh.requestedAt)}.` };
-      case 'aceptado': return { icon: 'checkmark' as const, tone: 'green' as const, title: '¡Envío aceptado!', text: `¡Enhorabuena! ${name} ha aceptado llevar tu paquete. Comparte el código con ${sh.recipientName}. Ten el paquete abierto para que lo revise al recogerlo.` };
+      case 'aceptado': return { icon: 'checkmark' as const, tone: 'green' as const, title: '¡Envío aceptado!', text: `¡Enhorabuena! ${name} ha aceptado llevar tu paquete. Al darle el paquete, enséñale el código de recogida de abajo. Comparte el código de entrega con ${sh.recipientName}.` };
       case 'recogido': return { icon: 'cube-outline' as const, tone: 'green' as const, title: 'Paquete recogido', text: `${name} lo recogió${sh.pickedUpAt ? ` a las ${sh.pickedUpAt}` : ''}. Salida prevista a las ${t.departure}; te avisaremos cuando arranque.` };
       case 'en_camino': return { icon: 'car-outline' as const, tone: 'green' as const, title: 'Tu paquete está en camino', text: `${t.startedAt ? `${name} salió a las ${hhmm(t.startedAt)}. ` : ''}Llegada prevista a las ${t.arrival}.` };
       case 'entregado': return { icon: 'gift-outline' as const, tone: 'green' as const, title: '¡Envío entregado!', text: `${sh.recipientName} ha recibido tu paquete${sh.deliveredAt ? ` a las ${sh.deliveredAt}` : ''}.` };

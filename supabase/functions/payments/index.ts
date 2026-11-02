@@ -20,6 +20,15 @@ const PMC = Deno.env.get('STRIPE_PAYMENT_METHOD_CONFIG') ?? 'pmc_1UWIVSDIBv4hBX6
 
 const RETURN_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/stripe-return`;
 
+/**
+ * Versión web (02/11/2026): tras Stripe se vuelve a la web, no a la app. Solo se aceptan orígenes de
+ * Expo Hosting (*.expo.app) o de pruebas en local, para que nadie use WannaSend para redirigir a otra web.
+ */
+function webOrigin(o?: string): string | null {
+  if (!o) return null;
+  return /^https:\/\/[a-z0-9-]+(--[a-z0-9-]+)?\.expo\.app$/.test(o) || /^http:\/\/localhost(:\d+)?$/.test(o) ? o : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const uid = await callerId(req);
@@ -28,9 +37,10 @@ Deno.serve(async (req) => {
   if (!stripe) return json({ error: 'payments_not_configured' }, 503);
   const db = admin();
 
-  let body: { action?: string; shipmentId?: string };
+  let body: { action?: string; shipmentId?: string; origin?: string };
   try { body = await req.json(); } catch { return json({ error: 'bad_request' }, 400); }
 
+  const web = webOrigin(body.origin);
   try {
     if (body.action === 'identity' || body.action === 'identity_status') {
       const { data: priv } = await db.from('profile_private').select('identity_status, identity_session_id').eq('id', uid).single();
@@ -47,11 +57,31 @@ Deno.serve(async (req) => {
         type: 'document',
         options: { document: { require_matching_selfie: true, allowed_types: ['id_card', 'passport', 'driving_license'] } },
         metadata: { user_id: uid },
-        return_url: `${RETURN_URL}?to=verificacion`,
+        return_url: web ? `${web}/verificar` : `${RETURN_URL}?to=verificacion`,
       });
       await db.from('identity_attempts').insert({ user_id: uid, session_id: vs.id });
       await db.from('profile_private').update({ identity_status: 'pendiente', identity_session_id: vs.id }).eq('id', uid);
       return json({ url: vs.url });
+    }
+
+    // Web: página de pago de Stripe (Checkout). El webhook marca el envío como pagado igual que en la app.
+    if (body.action === 'checkout') {
+      if (!web) return json({ error: 'bad_origin' }, 400);
+      const { data: s } = await db.from('shipments').select('id, sender_id, status, total_cents, trip_id').eq('id', body.shipmentId ?? '').maybeSingle();
+      if (!s || s.sender_id !== uid) return json({ error: 'not_found' }, 404);
+      if (s.status !== 'pendiente_pago') return json({ error: 'not_payable' }, 409);
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        ...(PMC ? { payment_method_configuration: PMC } : {}),
+        line_items: [{ quantity: 1, price_data: { currency: 'eur', unit_amount: s.total_cents, product_data: { name: 'Envío WannaSend' } } }],
+        payment_intent_data: { transfer_group: s.id, description: 'Envío WannaSend', metadata: { shipment_id: s.id, sender_id: uid } },
+        metadata: { shipment_id: s.id },
+        locale: 'es',
+        expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+        success_url: `${web}/envio/${s.id}?pago=ok`,
+        cancel_url: `${web}/envio/${s.id}?pago=cancelado`,
+      }, { idempotencyKey: `cs-${s.id}-${Math.floor(Date.now() / 600_000)}` });
+      return json({ url: session.url });
     }
 
     if (body.action === 'create_intent') {
@@ -108,7 +138,7 @@ Deno.serve(async (req) => {
         const { data: prof } = await db.from('profiles').select('name').eq('id', uid).single();
         await fillTestOnboarding(accountId, prof?.name ?? '');
       }
-      return json({ url: await carrierOnboardingLink(accountId, RETURN_URL), ready });
+      return json({ url: await carrierOnboardingLink(accountId, web ? `${web}/ganancias` : RETURN_URL), ready });
     }
 
     return json({ error: 'unknown_action' }, 400);
