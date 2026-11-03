@@ -88,7 +88,10 @@ export default function MiTrayecto() {
         <Timeline trip={t} showPoints />
         <KeyValue k="Plazas para paquetes" v={`${free} de ${t.capacity} libres`} accent />
         <KeyValue k="Tu aportación por paquete" v={euros(t.pricePerPackage)} />
-        {t.earningsCap ? <KeyValue k={`Gastos del viaje (${t.distanceKm} km)`} v={`${euros(capLeft ?? 0)} de ${euros(t.earningsCap)} disponibles`} /> : null}
+        {t.earningsCap ? <>
+          <KeyValue k={`Tope de gastos (${t.distanceKm} km)`} v={euros(t.earningsCap)} />
+          <KeyValue k="Aún por cubrir" v={euros(capLeft ?? 0)} />
+        </> : null}
         {startedAt ? <Badge label={`En camino desde las ${startedAt}`} /> : null}
         {t.status === 'cancelado' ? <Badge label="Trayecto cancelado" tone="red" /> : null}
       </Card>

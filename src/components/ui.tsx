@@ -67,9 +67,9 @@ export const Divider = () => <View style={{ height: 1, backgroundColor: colors.b
 
 export function KeyValue({ k, v, accent, bold }: { k: string; v: string; accent?: boolean; bold?: boolean }) {
   return (
-    <Row style={{ justifyContent: 'space-between' }}>
-      <Body style={{ color: bold ? colors.text : colors.textSecondary, fontFamily: bold ? fonts.semibold : fonts.medium, flexShrink: 1 }}>{k}</Body>
-      <Body style={{ fontFamily: fonts.semibold, color: accent ? colors.primaryDark : colors.text }}>{v}</Body>
+    <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <Body style={{ color: bold ? colors.text : colors.textSecondary, fontFamily: bold ? fonts.semibold : fonts.medium, flex: 1, minWidth: '40%' }}>{k}</Body>
+      <Body style={{ fontFamily: fonts.semibold, color: accent ? colors.primaryDark : colors.text, flexShrink: 1, textAlign: 'right' }}>{v}</Body>
     </Row>
   );
 }
