@@ -15,9 +15,6 @@ export default function Bienvenida() {
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <Logo size={52} />
         <Text style={{ fontFamily: fonts.medium, color: colors.white, fontSize: 15, marginTop: 4 }}>Anything anywhere</Text>
-        <Text style={{ fontFamily: fonts.medium, color: colors.primaryLight, fontSize: 15, marginTop: 28, textAlign: 'center', lineHeight: 22 }}>
-          Envía paquetes con personas que ya hacen ese trayecto, o comparte gastos llevando los de otros.
-        </Text>
       </View>
       <View style={{ gap: 12 }}>
         <Button label="Regístrate" variant="secondary" onPress={() => router.push('/registro')} style={{ backgroundColor: colors.white, borderColor: colors.white }} />
