@@ -17,11 +17,24 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-/** Abre la página de pago de Stripe. Al terminar, Stripe devuelve a la pantalla del envío. */
-export async function payShipment(shipmentId: string): Promise<'paid' | 'canceled'> {
+/** Página de Stripe para guardar el método de pago (no se cobra nada). Al terminar vuelve a la pantalla del envío. */
+export async function saveCardForShipment(shipmentId: string): Promise<'saved' | 'canceled'> {
   const { url } = await invoke<{ url: string }>({ action: 'checkout', shipmentId });
   window.location.assign(url);
   // La página se va a Stripe; esta promesa no llega a resolverse
+  return new Promise(() => undefined);
+}
+
+/** Comprueba que el método quedó guardado y envía la solicitud al carrier. */
+export async function confirmSetup(shipmentId: string): Promise<string> {
+  const r = await invoke<{ status: string }>({ action: 'confirm_setup', shipmentId });
+  return r.status;
+}
+
+/** Pagar ahora (si el cobro automático al aceptar necesitó confirmación). Mismo flujo: página de Stripe. */
+export async function payShipment(shipmentId: string): Promise<'paid' | 'canceled'> {
+  const { url } = await invoke<{ url: string }>({ action: 'checkout', shipmentId });
+  window.location.assign(url);
   return new Promise(() => undefined);
 }
 

@@ -109,6 +109,9 @@ export interface Shipment {
   carrierAmount: number;
   total: number;
   paid: boolean;
+  /** Cobro al aceptar: 'cobrando' (en curso) o 'requiere_accion' (el sender debe confirmar el pago antes de chargeDueAt) */
+  chargeStatus?: 'cobrando' | 'requiere_accion' | null;
+  chargeDueAt?: number | null;
   refunded: boolean;
   transferred: boolean;
   valueLabel?: string; // tramo de valor declarado: solo lo recibe el sender

@@ -144,7 +144,11 @@ export default function MiTrayecto() {
             <Badge label={STATUS[s.status].label} tone={STATUS[s.status].tone} />
           </Row>
           {pkgBox(s)}
-          {s.status === 'aceptado' ? <Button small label="Recoger paquete" icon="cube-outline" onPress={() => router.push(`/recogida/${s.id}`)} /> : null}
+          {s.status === 'aceptado' && !s.paid && s.chargeStatus ? (
+            <InfoBox icon="card-outline" tone="amber">
+              {s.chargeStatus === 'cobrando' ? 'Cobrando el envío al sender… En unos segundos podrás recogerlo.' : `Esperando a que ${s.senderName ?? 'el sender'} confirme el pago con su banco. No lo recojas hasta que se confirme.`}
+            </InfoBox>
+          ) : s.status === 'aceptado' ? <Button small label="Recoger paquete" icon="cube-outline" onPress={() => router.push(`/recogida/${s.id}`)} /> : null}
           {s.status === 'recogido' || s.status === 'en_camino' ? <Button small label="Confirmar entrega" icon="checkmark-done-outline" onPress={() => router.push(`/entrega/${s.id}`)} /> : null}
           {s.status === 'entregado' ? <Text style={{ fontFamily: fonts.medium, color: colors.primaryDark }}>Entregado{s.deliveredAt ? ` a las ${s.deliveredAt}` : ''} · +{euros(s.carrierAmount)}</Text> : null}
           {s.status === 'entregado' ? <RateSender shipmentId={s.id} name={s.senderName ?? 'el sender'} /> : null}

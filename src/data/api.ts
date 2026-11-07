@@ -66,6 +66,7 @@ type ShipmentRow = {
   recipient_name: string; status: ShipmentStatus; requested_at: string; picked_up_at: string | null; delivered_at: string | null;
   carrier_amount_cents: number; total_cents: number;
   paid_at?: string | null; refunded_at?: string | null; transferred_at?: string | null;
+  charge_status?: 'cobrando' | 'requiere_accion' | null; charge_due_at?: string | null;
   photo_path?: string; pickup_photo_path?: string | null;
   value?: { tier: ValueTier; exact_cents: number | null } | null; // solo lo recibe el sender (RLS)
   rejection_stage?: 'solicitud' | 'recogida' | null; rejection_reason?: string | null;
@@ -91,6 +92,8 @@ function toShipment(r: ShipmentRow): Shipment {
     carrierAmount: euros(r.carrier_amount_cents),
     total: euros(r.total_cents),
     paid: !!r.paid_at,
+    chargeStatus: r.charge_status ?? null,
+    chargeDueAt: r.charge_due_at ? new Date(r.charge_due_at).getTime() : null,
     refunded: !!r.refunded_at,
     transferred: !!r.transferred_at,
     valueLabel: r.value ? (r.value.exact_cents ? `${euros(r.value.exact_cents).toFixed(2).replace('.', ',')} €` : VALUE_TIERS.find((v) => v.id === r.value!.tier)?.label) : undefined,
@@ -102,7 +105,7 @@ function toShipment(r: ShipmentRow): Shipment {
   };
 }
 
-const SHIPMENT_COLS = 'id, trip_id, sender_id, size, weight_kg, content, description, recipient_name, status, requested_at, picked_up_at, delivered_at, carrier_amount_cents, total_cents, paid_at, refunded_at, transferred_at, photo_path, pickup_photo_path, rejection_stage, rejection_reason';
+const SHIPMENT_COLS = 'id, trip_id, sender_id, size, weight_kg, content, description, recipient_name, status, requested_at, picked_up_at, delivered_at, carrier_amount_cents, total_cents, paid_at, refunded_at, transferred_at, charge_status, charge_due_at, photo_path, pickup_photo_path, rejection_stage, rejection_reason';
 
 function check<T>(res: { data: T; error: unknown }): T {
   if (res.error) throw res.error;

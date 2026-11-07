@@ -195,3 +195,106 @@ export async function verifiedPrefill(stripe: Stripe, sessionId: string): Promis
     return undefined;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Cobro al aceptar (07/11/2026)                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Métodos de pago: Stripe ya no deja fijarlos con payment_method_types; se eligen con una
+ * "configuración de métodos de pago". La de modo prueba ("App WannaSend", creada el 30/10/2026) tiene
+ * tarjeta, Google Pay, Apple Pay y PayPal. En modo real hay que crear otra igual y ponerla en el secreto
+ * STRIPE_PAYMENT_METHOD_CONFIG (no es un dato secreto: solo identifica la configuración).
+ */
+export const PMC = Deno.env.get('STRIPE_PAYMENT_METHOD_CONFIG') ?? 'pmc_1UWIVSDIBv4hBX6p1wNrmNlk';
+export const RETURN_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/stripe-return`;
+
+type Db = ReturnType<typeof admin>;
+
+/** Cliente de Stripe del sender (para guardar su método de pago y cobrarle después). */
+export async function ensureCustomer(stripe: Stripe, db: Db, uid: string): Promise<string> {
+  const { data: priv } = await db.from('profile_private').select('stripe_customer_id').eq('id', uid).single();
+  if (priv?.stripe_customer_id) {
+    try {
+      const c = await stripe.customers.retrieve(priv.stripe_customer_id);
+      if (!(c as Stripe.DeletedCustomer).deleted) return c.id;
+    } catch { /* de otra cuenta de Stripe o borrado: se crea uno nuevo */ }
+  }
+  const { data: user } = await db.auth.admin.getUserById(uid);
+  const { data: prof } = await db.from('profiles').select('name').eq('id', uid).single();
+  const c = await stripe.customers.create({
+    email: user.user?.email ?? undefined, name: prof?.name ?? undefined, preferred_locales: ['es'], metadata: { user_id: uid },
+  }, { idempotencyKey: `cus-${uid}-${priv?.stripe_customer_id ?? 'new'}` });
+  await db.from('profile_private').update({ stripe_customer_id: c.id }).eq('id', uid);
+  return c.id;
+}
+
+/**
+ * Comprueba si el sender ya guardó su método de pago (app: SetupIntent; web: sesión de Checkout).
+ * Si es así, la solicitud pasa a "solicitado" y le llega al carrier. Idempotente.
+ */
+export async function syncSetup(stripe: Stripe, db: Db, s: { id: string; status: string; setup_intent_id: string | null }) {
+  if (s.status !== 'pendiente_pago' || !s.setup_intent_id) return s.status;
+  let siId: string | null = s.setup_intent_id;
+  if (siId.startsWith('cs_')) {
+    const cs = await stripe.checkout.sessions.retrieve(siId);
+    if (cs.status !== 'complete') return s.status;
+    siId = typeof cs.setup_intent === 'string' ? cs.setup_intent : cs.setup_intent?.id ?? null;
+    if (!siId) return s.status;
+  }
+  const si = await stripe.setupIntents.retrieve(siId);
+  if (si.status !== 'succeeded' || !si.payment_method) return s.status;
+  const pm = typeof si.payment_method === 'string' ? si.payment_method : si.payment_method.id;
+  const { data } = await db.from('shipments').update({ status: 'solicitado', payment_method_id: pm })
+    .eq('id', s.id).eq('status', 'pendiente_pago').select('status');
+  return data?.[0]?.status ?? 'solicitado';
+}
+
+/**
+ * Cobra un envío aceptado con el método que guardó el sender (sin que esté delante: off_session).
+ * Si el banco pide confirmarlo o la tarjeta falla, el envío queda "requiere_accion" y el sender lo
+ * confirma desde la app antes de charge_due_at.
+ */
+export async function chargeShipment(stripe: Stripe, db: Db, s: {
+  id: string; sender_id: string; total_cents: number; payment_method_id: string;
+}): Promise<'pagado' | 'procesando' | 'requiere_accion' | 'error'> {
+  const { data: priv } = await db.from('profile_private').select('stripe_customer_id').eq('id', s.sender_id).single();
+  const markAction = async (piId?: string) => {
+    await db.from('shipments').update({ charge_status: 'requiere_accion', ...(piId ? { payment_intent_id: piId } : {}) })
+      .eq('id', s.id).is('paid_at', null);
+    return 'requiere_accion' as const;
+  };
+  try {
+    const pi = await stripe.paymentIntents.create({
+      amount: s.total_cents,
+      currency: 'eur',
+      customer: priv?.stripe_customer_id ?? undefined,
+      payment_method: s.payment_method_id,
+      ...(PMC ? { payment_method_configuration: PMC } : {}),
+      off_session: true,
+      confirm: true,
+      return_url: RETURN_URL,
+      transfer_group: s.id,
+      description: 'Envío WannaSend',
+      metadata: { shipment_id: s.id, sender_id: s.sender_id },
+    }, { idempotencyKey: `charge-${s.id}` });
+    if (pi.status === 'succeeded') {
+      const charge = typeof pi.latest_charge === 'string' ? pi.latest_charge : pi.latest_charge?.id;
+      await db.from('shipments').update({
+        payment_intent_id: pi.id, charge_id: charge, paid_at: new Date().toISOString(), charge_status: null,
+      }).eq('id', s.id).is('paid_at', null);
+      return 'pagado';
+    }
+    if (pi.status === 'processing') {
+      // Lo termina el webhook (payment_intent.succeeded)
+      await db.from('shipments').update({ payment_intent_id: pi.id }).eq('id', s.id);
+      return 'procesando';
+    }
+    return markAction(pi.id);
+  } catch (e) {
+    const err = e as { type?: string; raw?: { payment_intent?: { id: string } }; message?: string };
+    if (err.type === 'StripeCardError' || err.raw?.payment_intent) return markAction(err.raw?.payment_intent?.id);
+    console.error('cobro fallido', s.id, err.message);
+    return 'error';
+  }
+}

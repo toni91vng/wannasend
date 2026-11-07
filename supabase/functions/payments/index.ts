@@ -1,24 +1,24 @@
 // Pagos de la app (requiere sesión).
-//  - create_intent: crea el PaymentIntent de un envío en 'pendiente_pago' y devuelve el client secret para PaymentSheet.
+//  - setup:         guarda el método de pago del sender para una solicitud (no cobra nada). Devuelve el client secret
+//                   del SetupIntent para PaymentSheet.
+//  - confirm_setup: comprueba que se guardó y envía la solicitud al carrier.
+//  - checkout:      versión web de setup (página de Stripe) o, si el cobro al aceptar necesita confirmación, pago.
+//  - create_intent: pago de un envío aceptado cuyo cobro automático necesita confirmación (o pago por adelantado
+//                   desde versiones antiguas de la app).
 //  - onboarding:    crea (si hace falta) la cuenta Connect del carrier y devuelve el enlace de alta en Stripe.
 //  - dashboard:     enlace al panel Express del carrier (ver cobros y transferencias).
 //  - status:        si el carrier ya puede recibir transferencias.
 //  - identity:        crea una verificación de identidad con Stripe Identity (DNI + selfie) y devuelve su enlace.
 //  - identity_status: consulta el resultado y lo guarda (también llega por el webhook).
 import {
-  admin, callerId, carrierOnboardingLink, carrierTransfersActive, CORS, createCarrierAccount, fillTestOnboarding, json, stripeClient,
-  stripeTestMode, syncIdentity, verifiedPrefill,
+  admin, callerId, carrierOnboardingLink, carrierTransfersActive, CORS, createCarrierAccount, ensureCustomer, fillTestOnboarding, json,
+  PMC, RETURN_URL, stripeClient, stripeTestMode, syncIdentity, syncSetup, verifiedPrefill,
 } from '../_shared/common.ts';
 
-/**
- * Métodos de pago: Stripe ya no deja fijarlos con payment_method_types; se eligen con una
- * "configuración de métodos de pago". La de modo prueba ("App WannaSend", creada el 30/10/2026) tiene
- * tarjeta, Google Pay, Apple Pay y PayPal. En modo real hay que crear otra igual y ponerla en el secreto
- * STRIPE_PAYMENT_METHOD_CONFIG (no es un dato secreto: solo identifica la configuración).
- */
-const PMC = Deno.env.get('STRIPE_PAYMENT_METHOD_CONFIG') ?? 'pmc_1UWIVSDIBv4hBX6p1wNrmNlk';
-
-const RETURN_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/stripe-return`;
+const SHIP_COLS = 'id, sender_id, status, total_cents, payment_intent_id, setup_intent_id, paid_at, charge_status';
+/** Envío aceptado cuyo cobro automático no se pudo completar: el sender lo confirma él mismo. */
+const needsConfirmation = (s: { status: string; paid_at: string | null; charge_status: string | null }) =>
+  s.status === 'aceptado' && !s.paid_at && s.charge_status === 'requiere_accion';
 
 /**
  * Versión web (02/11/2026): tras Stripe se vuelve a la web, no a la app. Solo se aceptan orígenes de
@@ -64,31 +64,60 @@ Deno.serve(async (req) => {
       return json({ url: vs.url });
     }
 
-    // Web: página de pago de Stripe (Checkout). El webhook marca el envío como pagado igual que en la app.
-    if (body.action === 'checkout') {
-      if (!web) return json({ error: 'bad_origin' }, 400);
-      const { data: s } = await db.from('shipments').select('id, sender_id, status, total_cents, trip_id').eq('id', body.shipmentId ?? '').maybeSingle();
+    if (['setup', 'confirm_setup', 'checkout', 'create_intent'].includes(body.action ?? '')) {
+      const { data: s } = await db.from('shipments').select(SHIP_COLS).eq('id', body.shipmentId ?? '').maybeSingle();
       if (!s || s.sender_id !== uid) return json({ error: 'not_found' }, 404);
-      if (s.status !== 'pendiente_pago') return json({ error: 'not_payable' }, 409);
-      const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        ...(PMC ? { payment_method_configuration: PMC } : {}),
-        line_items: [{ quantity: 1, price_data: { currency: 'eur', unit_amount: s.total_cents, product_data: { name: 'Envío WannaSend' } } }],
-        payment_intent_data: { transfer_group: s.id, description: 'Envío WannaSend', metadata: { shipment_id: s.id, sender_id: uid } },
-        metadata: { shipment_id: s.id },
-        locale: 'es',
-        expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
-        success_url: `${web}/envio/${s.id}?pago=ok`,
-        cancel_url: `${web}/envio/${s.id}?pago=cancelado`,
-      }, { idempotencyKey: `cs-${s.id}-${Math.floor(Date.now() / 600_000)}` });
-      return json({ url: session.url });
-    }
 
-    if (body.action === 'create_intent') {
-      const { data: s } = await db.from('shipments').select('id, sender_id, status, total_cents, payment_intent_id').eq('id', body.shipmentId ?? '').maybeSingle();
-      if (!s || s.sender_id !== uid) return json({ error: 'not_found' }, 404);
-      if (s.status !== 'pendiente_pago') return json({ error: 'not_payable' }, 409);
+      // App: guardar el método de pago (no se cobra ni se bloquea nada)
+      if (body.action === 'setup') {
+        if (s.status !== 'pendiente_pago') return json({ error: 'not_payable' }, 409);
+        const customer = await ensureCustomer(stripe, db, uid);
+        const si = await stripe.setupIntents.create({
+          customer,
+          usage: 'off_session',
+          automatic_payment_methods: { enabled: true },
+          ...(PMC ? { payment_method_configuration: PMC } : {}),
+          description: 'Envío WannaSend: se cobra cuando el carrier acepta',
+          metadata: { shipment_id: s.id, sender_id: uid },
+        }, { idempotencyKey: `si-${s.id}-${Math.floor(Date.now() / 600_000)}` });
+        await db.from('shipments').update({ setup_intent_id: si.id }).eq('id', s.id);
+        return json({ setupIntentClientSecret: si.client_secret, customerId: customer });
+      }
 
+      if (body.action === 'confirm_setup') {
+        return json({ status: await syncSetup(stripe, db, s) });
+      }
+
+      // Web: página de Stripe para guardar el método (o para pagar si el cobro necesita confirmación)
+      if (body.action === 'checkout') {
+        if (!web) return json({ error: 'bad_origin' }, 400);
+        const back = { success_url: `${web}/envio/${s.id}?pago=ok`, cancel_url: `${web}/envio/${s.id}?pago=cancelado` };
+        const expires_at = Math.floor(Date.now() / 1000) + 30 * 60;
+        const bucket = Math.floor(Date.now() / 600_000);
+        const customer = await ensureCustomer(stripe, db, uid);
+        if (s.status === 'pendiente_pago') {
+          const session = await stripe.checkout.sessions.create({
+            mode: 'setup', currency: 'eur', customer,
+            ...(PMC ? { payment_method_configuration: PMC } : {}),
+            setup_intent_data: { description: 'Envío WannaSend: se cobra cuando el carrier acepta', metadata: { shipment_id: s.id, sender_id: uid } },
+            metadata: { shipment_id: s.id }, locale: 'es', expires_at, ...back,
+          }, { idempotencyKey: `cs-setup-${s.id}-${bucket}` });
+          await db.from('shipments').update({ setup_intent_id: session.id }).eq('id', s.id);
+          return json({ url: session.url });
+        }
+        if (!needsConfirmation(s)) return json({ error: 'not_payable' }, 409);
+        const session = await stripe.checkout.sessions.create({
+          mode: 'payment', customer,
+          ...(PMC ? { payment_method_configuration: PMC } : {}),
+          line_items: [{ quantity: 1, price_data: { currency: 'eur', unit_amount: s.total_cents, product_data: { name: 'Envío WannaSend' } } }],
+          payment_intent_data: { transfer_group: s.id, description: 'Envío WannaSend', metadata: { shipment_id: s.id, sender_id: uid } },
+          metadata: { shipment_id: s.id }, locale: 'es', expires_at, ...back,
+        }, { idempotencyKey: `cs-pay-${s.id}-${bucket}` });
+        return json({ url: session.url });
+      }
+
+      // App: pagar ahora (cobro al aceptar que necesita confirmación; o versiones antiguas que pagan al solicitar)
+      if (s.status !== 'pendiente_pago' && !needsConfirmation(s)) return json({ error: 'not_payable' }, 409);
       if (s.payment_intent_id) {
         const existing = await stripe.paymentIntents.retrieve(s.payment_intent_id);
         if (existing.status !== 'canceled' && existing.status !== 'succeeded') {

@@ -13,7 +13,38 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-/** Abre el formulario oficial de Stripe. La app nunca ve los datos de la tarjeta. */
+/**
+ * Cobro al aceptar (07/11/2026): el sender guarda su método de pago con el formulario oficial de Stripe.
+ * No se cobra ni se bloquea nada; se cobra solo cuando el carrier acepta. La app nunca ve la tarjeta.
+ */
+export async function saveCardForShipment(shipmentId: string): Promise<'saved' | 'canceled'> {
+  const { setupIntentClientSecret } = await invoke<{ setupIntentClientSecret: string }>({ action: 'setup', shipmentId });
+  const init = await initPaymentSheet({
+    merchantDisplayName: 'WannaSend',
+    setupIntentClientSecret,
+    googlePay: { merchantCountryCode: 'ES', currencyCode: 'EUR', testEnv: true },
+    defaultBillingDetails: { address: { country: 'ES' } },
+    returnURL: 'wannasend://stripe-redirect',
+    appearance: { colors: { primary: '#5DB075' } },
+    primaryButtonLabel: 'Guardar y enviar solicitud',
+  });
+  if (init.error) throw new Error(init.error.message);
+  const res = await presentPaymentSheet();
+  if (res.error) {
+    if (res.error.code === 'Canceled') return 'canceled';
+    throw new Error(res.error.message);
+  }
+  await confirmSetup(shipmentId).catch(() => undefined); // si falla, lo completa el servidor en unos minutos
+  return 'saved';
+}
+
+/** Comprueba que el método quedó guardado y envía la solicitud al carrier. */
+export async function confirmSetup(shipmentId: string): Promise<string> {
+  const r = await invoke<{ status: string }>({ action: 'confirm_setup', shipmentId });
+  return r.status;
+}
+
+/** Pagar ahora: solo si el cobro automático al aceptar necesitó confirmación del banco o falló. */
 export async function payShipment(shipmentId: string): Promise<'paid' | 'canceled'> {
   const { clientSecret } = await invoke<{ clientSecret: string }>({ action: 'create_intent', shipmentId });
   const init = await initPaymentSheet({

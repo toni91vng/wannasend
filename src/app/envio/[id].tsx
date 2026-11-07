@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { PackagePhoto, VerifiedBadge } from '@/components/Photos';
 import { Timeline } from '@/components/TripCard';
@@ -14,7 +14,7 @@ import { Shipment } from '@/data/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { longDate, STATUS, timeAgo } from '@/lib/format';
 import { notify, shareText } from '@/lib/notify';
-import { payShipment } from '@/lib/payments';
+import { confirmSetup, payShipment, saveCardForShipment } from '@/lib/payments';
 import { euros } from '@/lib/pricing';
 import { run } from '@/lib/run';
 import { errorText } from '@/lib/supabase';
@@ -42,6 +42,11 @@ export default function Envio() {
   const { data: pickupCode } = usePickupCode(id, sh?.status === 'aceptado');
   const { data: reviewed } = useHasReviewed(id, sh?.status === 'entregado');
   const [busy, setBusy] = useState(false);
+  // Web: al volver de Stripe con el método guardado, se envía la solicitud sin esperar al servidor
+  useEffect(() => {
+    if (pago !== 'ok' || sh?.status !== 'pendiente_pago') return;
+    confirmSetup(sh.id).then(() => qc.invalidateQueries({ queryKey: ['shipment', id] })).catch(() => undefined);
+  }, [pago, sh?.status]);
 
   if (isLoading) return <Screen title="Envío"><Loading /></Screen>;
   if (error) return <Screen title="Envío"><ErrorBox text={errorText(error)} /></Screen>;
@@ -65,6 +70,14 @@ export default function Envio() {
   };
 
   const refundText = !sh.paid ? '' : sh.refunded ? `Te hemos devuelto ${euros(sh.total)}.` : `Estamos devolviéndote ${euros(sh.total)}; puede tardar unos días en aparecer en tu tarjeta.`;
+  const addPaymentMethod = async () => {
+    setBusy(true);
+    try {
+      const r = await saveCardForShipment(sh.id);
+      if (r === 'saved') await qc.invalidateQueries({ queryKey: ['shipment', id] });
+    } catch (e) { notify('No se ha podido guardar el método de pago', errorText(e)); }
+    setBusy(false);
+  };
   const completePayment = async () => {
     setBusy(true);
     try {
@@ -73,14 +86,21 @@ export default function Envio() {
     } catch (e) { notify('No se ha podido pagar', errorText(e)); }
     setBusy(false);
   };
+  // Aceptado pero aún sin cobrar
+  const unpaid = sh.status === 'aceptado' && !sh.paid && !!sh.chargeStatus;
+  const dueText = sh.chargeDueAt ? `antes de las ${hhmm(new Date(sh.chargeDueAt).toISOString())} del ${longDate(new Date(sh.chargeDueAt).toISOString()).toLowerCase()}` : 'cuanto antes';
 
   const head = (() => {
     switch (sh.status) {
       case 'pendiente_pago': return pago === 'ok'
-        ? { icon: 'time-outline' as const, tone: 'amber' as const, title: 'Confirmando tu pago…', text: `Stripe nos está confirmando el pago. En unos segundos se enviará la solicitud a ${name}.` }
-        : { icon: 'card-outline' as const, tone: 'amber' as const, title: 'Pago pendiente', text: `Completa el pago para enviar la solicitud a ${name}. Si no, se cancelará en 30 minutos.` };
-      case 'solicitado': return { icon: 'time-outline' as const, tone: 'amber' as const, title: `Esperando respuesta de ${name}`, text: `Te avisaremos en cuanto responda. Si no responde en 12 h, la solicitud caduca. Enviada ${timeAgo(sh.requestedAt)}.` };
-      case 'aceptado': return { icon: 'checkmark' as const, tone: 'green' as const, title: '¡Envío aceptado!', text: `¡Enhorabuena! ${name} ha aceptado llevar tu paquete. Al darle el paquete, enséñale el código de recogida de abajo. Comparte el código de entrega con ${sh.recipientName}.` };
+        ? { icon: 'time-outline' as const, tone: 'amber' as const, title: 'Enviando tu solicitud…', text: `Stripe nos está confirmando tu método de pago. En unos segundos le llegará la solicitud a ${name}.` }
+        : { icon: 'card-outline' as const, tone: 'amber' as const, title: 'Falta tu método de pago', text: `Añádelo para enviar la solicitud a ${name}. No te cobramos nada hasta que acepte. Si no, se cancelará en 30 minutos.` };
+      case 'solicitado': return { icon: 'time-outline' as const, tone: 'amber' as const, title: `Esperando respuesta de ${name}`, text: `Te avisaremos en cuanto responda. ${sh.paid ? '' : `No te cobramos nada hasta que acepte. `}Si no responde en 12 h, la solicitud caduca. Enviada ${timeAgo(sh.requestedAt)}.` };
+      case 'aceptado': return unpaid
+        ? sh.chargeStatus === 'cobrando'
+          ? { icon: 'card-outline' as const, tone: 'green' as const, title: '¡Envío aceptado!', text: `${name} ha aceptado llevar tu paquete. Estamos cobrando ${euros(sh.total)} con el método de pago que guardaste; tarda unos segundos.` }
+          : { icon: 'alert-circle-outline' as const, tone: 'amber' as const, title: 'Confirma el pago', text: `${name} ha aceptado, pero tu banco necesita que confirmes el pago de ${euros(sh.total)} (o el cobro no se ha podido hacer). Confírmalo ${dueText}; si no, el envío se cancelará.` }
+        : { icon: 'checkmark' as const, tone: 'green' as const, title: '¡Envío aceptado!', text: `¡Enhorabuena! ${name} ha aceptado llevar tu paquete. Al darle el paquete, enséñale el código de recogida de abajo. Comparte el código de entrega con ${sh.recipientName}.` };
       case 'recogido': return { icon: 'cube-outline' as const, tone: 'green' as const, title: 'Paquete recogido', text: `${name} lo recogió${sh.pickedUpAt ? ` a las ${sh.pickedUpAt}` : ''}. Salida prevista a las ${t.departure}; te avisaremos cuando arranque.` };
       case 'en_camino': return { icon: 'car-outline' as const, tone: 'green' as const, title: 'Tu paquete está en camino', text: `${t.startedAt ? `${name} salió a las ${hhmm(t.startedAt)}. ` : ''}Llegada prevista a las ${t.arrival}.` };
       case 'entregado': return { icon: 'gift-outline' as const, tone: 'green' as const, title: '¡Envío entregado!', text: `${sh.recipientName} ha recibido tu paquete${sh.deliveredAt ? ` a las ${sh.deliveredAt}` : ''}.` };
@@ -148,7 +168,11 @@ export default function Envio() {
         </Card>
       ) : null}
 
-      {sh.status === 'aceptado' ? (
+      {unpaid && sh.chargeStatus === 'requiere_accion' ? (
+        <Button label={`Confirmar el pago (${euros(sh.total)})`} icon="card-outline" loading={busy} onPress={completePayment} />
+      ) : null}
+
+      {sh.status === 'aceptado' && !unpaid ? (
         <Card style={{ alignItems: 'center' }}>
           <H3>Código de recogida</H3>
           <Muted style={{ textAlign: 'center' }}>Cuando {name} recoja el paquete, enséñale este QR o dile el código. Así queda confirmado que se lo has dado.</Muted>
@@ -197,7 +221,7 @@ export default function Envio() {
       {['rechazado', 'caducado', 'cancelado'].includes(sh.status) ? <Button label="Buscar otro trayecto" onPress={() => { router.dismissAll(); router.navigate('/buscar'); }} /> : null}
       {sh.status === 'pendiente_pago' ? (
         <>
-          <Button label={`Completar pago (${euros(sh.total)})`} icon="card-outline" loading={busy} onPress={completePayment} />
+          <Button label="Añadir método de pago" icon="card-outline" loading={busy} onPress={addPaymentMethod} />
           <Button variant="ghost" label="Cancelar" color={colors.danger} onPress={cancel} />
         </>
       ) : null}

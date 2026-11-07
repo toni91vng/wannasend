@@ -7,16 +7,17 @@ import { NewPackage, requestShipment } from '@/data/api';
 import { VALUE_TIERS } from '@/data/types';
 import { useAppConfig, useMyVerification, useProfile, useTrip } from '@/data/hooks';
 import { notify } from '@/lib/notify';
-import { payShipment } from '@/lib/payments';
+import { saveCardForShipment } from '@/lib/payments';
 import { euros } from '@/lib/pricing';
 import { run } from '@/lib/run';
 import { errorText } from '@/lib/supabase';
 import { colors } from '@/lib/theme';
 
 /**
- * Paso 2: precio y pago.
- * Con los pagos activos se abre el formulario oficial de Stripe (la app nunca ve la tarjeta) y el envío pasa a
- * "solicitado" cuando Stripe confirma el cobro. Si el carrier rechaza o no responde en 12 h, se reembolsa solo.
+ * Paso 2: precio y método de pago.
+ * Cobro al aceptar (07/11/2026): el sender guarda su método de pago con el formulario oficial de Stripe (la app
+ * nunca ve la tarjeta) y la solicitud llega al carrier. No se cobra nada hasta que el carrier acepta; si rechaza
+ * o no responde en 12 h, no se cobra.
  */
 export default function Pago() {
   const { id, pkg } = useLocalSearchParams<{ id: string; pkg: string }>();
@@ -44,13 +45,13 @@ export default function Pago() {
     if (!sid) { setBusy(false); return; }
     if (!payments) { setBusy(false); go(sid); return; }
     try {
-      const r = await payShipment(sid);
+      const r = await saveCardForShipment(sid);
       setBusy(false);
-      if (r === 'paid') go(sid);
-      else notify('Pago cancelado', 'Tu solicitud no se ha enviado. Puedes completar el pago desde Trayectos durante los próximos 30 minutos.');
+      if (r === 'saved') go(sid);
+      else notify('Solicitud sin enviar', 'Falta tu método de pago. Puedes añadirlo desde Trayectos durante los próximos 30 minutos.');
     } catch (e) {
       setBusy(false);
-      notify('No se ha podido pagar', errorText(e));
+      notify('No se ha podido guardar el método de pago', errorText(e));
     }
   };
 
@@ -59,7 +60,7 @@ export default function Pago() {
       footer={<>
         {needsIdentity
           ? <Button label="Verificar mi identidad" icon="shield-checkmark-outline" onPress={() => router.push('/verificar')} />
-          : <Button label={payments ? `Pagar ${euros(t.total)}` : 'Enviar solicitud'} loading={busy} onPress={send} />}
+          : <Button label={payments ? 'Añadir método de pago y enviar' : 'Enviar solicitud'} loading={busy} onPress={send} />}
         {payments ? <Row style={{ justifyContent: 'center' }} gap={6}><Ionicons name="lock-closed" size={14} color={colors.muted} /><Small>Pago seguro con Stripe. WannaSend nunca ve los datos de tu tarjeta.</Small></Row> : null}
       </>}
     >
@@ -87,7 +88,7 @@ export default function Pago() {
       ) : null}
       {payments ? (
         <InfoBox icon="shield-checkmark-outline">
-          Cobramos ahora y guardamos el dinero hasta la entrega. Si {carrier?.name ?? 'el carrier'} rechaza la solicitud o no responde en 12 h, te lo devolvemos automáticamente.
+          Ahora no te cobramos nada ni te bloqueamos dinero. Solo te cobraremos {euros(t.total)} si {carrier?.name ?? 'el carrier'} acepta; si rechaza la solicitud o no responde en 12 h, no pagas nada. Guardamos el dinero hasta la entrega.
         </InfoBox>
       ) : (
         <InfoBox icon="flask-outline" tone="amber">Beta de prueba: todavía no se cobra nada.</InfoBox>

@@ -1,9 +1,10 @@
 // Proceso automático (cada 5 minutos con pg_cron). Protegido con la cabecera x-worker-secret (secreto guardado en la base de datos).
+//  0. Envía las solicitudes cuyo método de pago ya está guardado y cobra los envíos recién aceptados.
 //  1. Reembolsa los envíos pagados que se rechazaron, caducaron o se cancelaron.
 //  2. Transfiere su parte al carrier de los envíos entregados (si ya completó el alta en Stripe).
 //  3. Borra fotos de paquetes: las no usadas (24 h) y las de envíos cerrados hace más de 120 días.
 // Es idempotente: se puede ejecutar las veces que haga falta.
-import { admin, carrierTransfersActive, json, stripeClient } from '../_shared/common.ts';
+import { admin, carrierTransfersActive, chargeShipment, json, stripeClient, syncSetup } from '../_shared/common.ts';
 
 async function cleanupPhotos(db: ReturnType<typeof admin>): Promise<number> {
   const { data: names, error } = await db.rpc('photo_cleanup_candidates');
@@ -25,7 +26,22 @@ Deno.serve(async (req) => {
   const photosDeleted = await cleanupPhotos(db);
   const stripe = stripeClient();
   if (!stripe) return json({ skipped: 'payments_not_configured', photosDeleted });
-  const out = { refunds: 0, transfers: 0, photosDeleted, errors: [] as string[] };
+  const out = { requests: 0, charges: {} as Record<string, number>, refunds: 0, transfers: 0, photosDeleted, errors: [] as string[] };
+
+  // 0a. Solicitudes con el método de pago ya guardado (por si la app se cerró antes de confirmarlo)
+  const { data: toSync } = await db.from('shipments').select('id, status, setup_intent_id')
+    .eq('status', 'pendiente_pago').not('setup_intent_id', 'is', null).limit(50);
+  for (const s of toSync ?? []) {
+    try { if ((await syncSetup(stripe, db, s)) === 'solicitado') out.requests++; } catch (e) { out.errors.push(`setup ${s.id}: ${(e as Error).message}`); }
+  }
+
+  // 0b. Cobro al aceptar
+  const { data: toCharge } = await db.from('shipments').select('id, sender_id, total_cents, payment_method_id')
+    .eq('status', 'aceptado').eq('charge_status', 'cobrando').is('paid_at', null).not('payment_method_id', 'is', null).limit(50);
+  for (const s of toCharge ?? []) {
+    const r = await chargeShipment(stripe, db, s as any);
+    out.charges[r] = (out.charges[r] ?? 0) + 1;
+  }
 
   // 1. Reembolsos
   const { data: toRefund } = await db.from('shipments').select('id, payment_intent_id')
